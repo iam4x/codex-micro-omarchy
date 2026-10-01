@@ -24,7 +24,7 @@ impl CodexMicro {
             p.border
         };
         let selected = if self.lighting.page {
-            self.lighting.target == target
+            self.lighting.target == Some(target)
         } else {
             self.selected == control
         };

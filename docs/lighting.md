@@ -1,7 +1,9 @@
 # Lighting protocol
 
-Every profile has lighting enabled. The editor saves each change immediately
-and the service checks for configuration updates every 50 milliseconds.
+Every profile has lighting enabled. The editor saves colors and effects immediately.
+Brightness and speed preview locally during dragging and save on release, so the
+service sends only the final slider value to the device. The service checks for
+configuration updates every 50 milliseconds.
 Omitted `lighting` tables load the default settings. Configuration validation rejects
 colors above `0xFFFFFF` and brightness or speed above 100 before replacing the
 saved file. The six-element `agents` array fixes the number of individual LEDs.

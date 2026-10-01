@@ -706,6 +706,18 @@ fn check_lighting(app: &mut NativeApp) -> Result<()> {
     let bindings = app.bindings()?;
     let defaults = app.inspect()?.lighting;
     ensure!(
+        app.inspect()?.lighting_target.is_none(),
+        "Lighting should start without a selected target"
+    );
+    app.ui(json!({"action":"lighting_page","open":true}))?;
+    app.screenshot("native-lighting-unselected")?;
+    ensure!(
+        !app.request(json!({"op":"ui","action":"lighting_value","light":{"effect":"solid"}}))?
+            .ok,
+        "Lighting edit accepted without a selected target"
+    );
+    app.ui(json!({"action":"lighting_page","open":false}))?;
+    ensure!(
         defaults["keys"]["effect"] == "solid",
         "Legacy profile must enable default lighting"
     );
@@ -742,7 +754,7 @@ fn check_lighting(app: &mut NativeApp) -> Result<()> {
     }
     app.ui(json!({"action":"select","control":"AG02"}))?;
     ensure!(
-        app.inspect()?.lighting_target == 2,
+        app.inspect()?.lighting_target == Some(2),
         "Device key did not select Key 03"
     );
     app.ui(json!({"action":"lighting_page","open":false}))?;
@@ -765,12 +777,14 @@ fn check_lighting(app: &mut NativeApp) -> Result<()> {
         "Ctrl+S in lighting changed bindings"
     );
     app.screenshot("native-lighting")?;
+    check_slider_release(app, false, "brightness")?;
     app.ui(json!({"action":"lighting_value","light":{"color":0,"effect":"off","brightness":0,"speed":0}}))?;
     check_saved_lighting(app)?;
     app.screenshot("native-lighting-off")?;
     app.ui(json!({"action":"lighting_value","light":{"color":0x2dd4bf,"effect":"breath","brightness":60,"speed":30}}))?;
     check_saved_lighting(app)?;
     app.screenshot("native-lighting-breath")?;
+    check_slider_release(app, true, "speed")?;
     let animated = app.inspect()?.lighting;
     app.restart()?;
     ensure!(
@@ -780,7 +794,7 @@ fn check_lighting(app: &mut NativeApp) -> Result<()> {
     app.ui(json!({"action":"lighting_page","open":true}))?;
     app.ui(json!({"action":"select","control":"MIC"}))?;
     ensure!(
-        app.inspect()?.lighting_target == 6,
+        app.inspect()?.lighting_target == Some(6),
         "Command key did not select grouped LEDs"
     );
     app.ui(json!({"action":"open_profile_dialog"}))?;
@@ -810,7 +824,33 @@ fn check_lighting(app: &mut NativeApp) -> Result<()> {
         "Solid screenshot used wrong effect"
     );
     println!(
-        "PASS: lighting applies and saves every change, defaults are enabled, profiles stay independent, and bindings stay intact"
+        "PASS: lighting saves sliders on release, applies colors and effects immediately, starts without a selection, and preserves profiles and bindings"
+    );
+    Ok(())
+}
+
+fn check_slider_release(app: &NativeApp, speed: bool, field: &str) -> Result<()> {
+    let original = fs::read_to_string(&app.config)?;
+    let start = app.inspect()?.lighting["ambient"][field].clone();
+    for value in [65, 70, 80, 90] {
+        app.ui(json!({"action":"lighting_slider","speed":speed,"value":value}))?;
+        ensure!(
+            fs::read_to_string(&app.config)? == original,
+            "Slider saved before release"
+        );
+    }
+    ensure!(
+        app.inspect()?.lighting["ambient"][field] != start,
+        "Slider drag did not change {field}"
+    );
+    app.ui(json!({"action":"lighting_slider_release"}))?;
+    check_saved_lighting(app)?;
+    let saved = fs::read_to_string(&app.config)?;
+    ensure!(saved != original, "Slider release did not save");
+    app.ui(json!({"action":"lighting_slider_release"}))?;
+    ensure!(
+        fs::read_to_string(&app.config)? == saved,
+        "Repeated release changed settings"
     );
     Ok(())
 }
