@@ -1,0 +1,4 @@
+# Access for the active local session, limited to Codex Micro USB/Bluetooth HID.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="8360", TAG+="uaccess", MODE="0660"
+SUBSYSTEM=="hidraw", KERNELS=="0005:303A:8360.*", TAG+="uaccess", MODE="0660"
+

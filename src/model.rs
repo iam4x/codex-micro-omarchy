@@ -1,0 +1,592 @@
+use anyhow::{Context, Result, bail, ensure};
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::BTreeMap,
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub enum Control {
+    AG00,
+    AG01,
+    AG02,
+    AG03,
+    AG04,
+    AG05,
+    ACT06,
+    ACT07,
+    ACT08,
+    ACT09,
+    #[serde(rename = "MIC")]
+    Mic,
+    ACT12,
+    #[serde(rename = "ENC_CLK")]
+    DialPress,
+    #[serde(rename = "ENC_CW")]
+    DialClockwise,
+    #[serde(rename = "ENC_CC")]
+    DialCounterclockwise,
+}
+
+impl Control {
+    pub const ALL: [Self; 15] = [
+        Self::AG00,
+        Self::AG01,
+        Self::AG02,
+        Self::AG03,
+        Self::AG04,
+        Self::AG05,
+        Self::ACT06,
+        Self::ACT07,
+        Self::ACT08,
+        Self::ACT09,
+        Self::Mic,
+        Self::ACT12,
+        Self::DialPress,
+        Self::DialClockwise,
+        Self::DialCounterclockwise,
+    ];
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::AG00 => "AG00",
+            Self::AG01 => "AG01",
+            Self::AG02 => "AG02",
+            Self::AG03 => "AG03",
+            Self::AG04 => "AG04",
+            Self::AG05 => "AG05",
+            Self::ACT06 => "ACT06",
+            Self::ACT07 => "ACT07",
+            Self::ACT08 => "ACT08",
+            Self::ACT09 => "ACT09",
+            Self::Mic => "MIC",
+            Self::ACT12 => "ACT12",
+            Self::DialPress => "ENC_CLK",
+            Self::DialClockwise => "ENC_CW",
+            Self::DialCounterclockwise => "ENC_CC",
+        }
+    }
+    pub fn from_id(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|control| control.id() == value)
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::AG00 => "Key 1",
+            Self::AG01 => "Key 2",
+            Self::AG02 => "Key 3",
+            Self::AG03 => "Key 4",
+            Self::AG04 => "Key 5",
+            Self::AG05 => "Key 6",
+            Self::ACT06 => "Key 7",
+            Self::ACT07 => "Key 8",
+            Self::ACT08 => "Key 9",
+            Self::ACT09 => "Key 10",
+            Self::Mic => "Key 11",
+            Self::ACT12 => "Key 12",
+            Self::DialPress => "Dial press",
+            Self::DialClockwise => "Dial clockwise",
+            Self::DialCounterclockwise => "Dial counterclockwise",
+        }
+    }
+    pub fn short_name(self) -> &'static str {
+        match self {
+            Self::AG00 => "01",
+            Self::AG01 => "02",
+            Self::AG02 => "03",
+            Self::AG03 => "04",
+            Self::AG04 => "05",
+            Self::AG05 => "06",
+            Self::ACT06 => "07",
+            Self::ACT07 => "08",
+            Self::ACT08 => "09",
+            Self::ACT09 => "10",
+            Self::Mic => "11",
+            Self::ACT12 => "12",
+            Self::DialPress => "Press",
+            Self::DialClockwise => "Clockwise",
+            Self::DialCounterclockwise => "Counterclockwise",
+        }
+    }
+    pub fn is_rotation(self) -> bool {
+        matches!(self, Self::DialClockwise | Self::DialCounterclockwise)
+    }
+    pub fn primary_phase(self) -> Phase {
+        if self.is_rotation() {
+            Phase::Step
+        } else {
+            Phase::Press
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Phase {
+    Press,
+    Release,
+    Step,
+}
+impl Phase {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Press => "On press",
+            Self::Release => "On release",
+            Self::Step => "On turn",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Action {
+    Preset {
+        preset: Preset,
+    },
+    Launch {
+        command: String,
+    },
+    Shortcut {
+        chord: String,
+    },
+    Text {
+        text: String,
+        #[serde(default)]
+        submit: bool,
+    },
+    Command {
+        command: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Preset {
+    Terminal,
+    Browser,
+    Files,
+    VolumeUp,
+    VolumeDown,
+    Mute,
+    PlayPause,
+    Play,
+    Pause,
+    NextTrack,
+    PreviousTrack,
+    WorkspaceNext,
+    WorkspacePrevious,
+    Screenshot,
+}
+impl Preset {
+    pub const ALL: [Self; 14] = [
+        Self::Terminal,
+        Self::Browser,
+        Self::Files,
+        Self::VolumeUp,
+        Self::VolumeDown,
+        Self::Mute,
+        Self::PlayPause,
+        Self::Play,
+        Self::Pause,
+        Self::NextTrack,
+        Self::PreviousTrack,
+        Self::WorkspaceNext,
+        Self::WorkspacePrevious,
+        Self::Screenshot,
+    ];
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Terminal => "Open terminal",
+            Self::Browser => "Web browser",
+            Self::Files => "File manager",
+            Self::VolumeUp => "Volume up",
+            Self::VolumeDown => "Volume down",
+            Self::Mute => "Mute audio",
+            Self::PlayPause => "Play / pause",
+            Self::Play => "Play",
+            Self::Pause => "Pause",
+            Self::NextTrack => "Next track",
+            Self::PreviousTrack => "Previous track",
+            Self::WorkspaceNext => "Next workspace",
+            Self::WorkspacePrevious => "Previous workspace",
+            Self::Screenshot => "Take screenshot",
+        }
+    }
+    pub fn icon(self) -> &'static str {
+        match self {
+            Self::Terminal => "terminal",
+            Self::Browser => "globe",
+            Self::Files => "folder",
+            Self::VolumeUp | Self::VolumeDown | Self::Mute => "volume",
+            Self::PlayPause | Self::Play => "play",
+            Self::Pause => "pause",
+            Self::NextTrack => "skip-forward",
+            Self::PreviousTrack => "skip-back",
+            Self::WorkspaceNext | Self::WorkspacePrevious => "layers",
+            Self::Screenshot => "camera",
+        }
+    }
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::Terminal => "Your default Omarchy terminal",
+            Self::Browser => "Your default web browser",
+            Self::Files => "Browse files with Nautilus",
+            Self::VolumeUp => "Increase by 5% with volume overlay",
+            Self::VolumeDown => "Decrease by 5% with volume overlay",
+            Self::Mute => "Toggle mute with on-screen feedback",
+            Self::PlayPause => "Toggle the active media player",
+            Self::Play => "Resume playback",
+            Self::Pause => "Pause playback",
+            Self::NextTrack => "Skip forward to the next track",
+            Self::PreviousTrack => "Go back to the previous track",
+            Self::WorkspaceNext => "Move one workspace forward",
+            Self::WorkspacePrevious => "Move one workspace back",
+            Self::Screenshot => "Open the region capture tool",
+        }
+    }
+
+    fn argv(self) -> &'static [&'static str] {
+        match self {
+            Self::Terminal => &["omarchy", "launch", "terminal"],
+            Self::Browser => &["omarchy", "launch", "browser"],
+            Self::Files => &["omarchy", "launch", "nautilus"],
+            Self::VolumeUp => &["omarchy", "audio", "output", "volume", "raise"],
+            Self::VolumeDown => &["omarchy", "audio", "output", "volume", "lower"],
+            Self::Mute => &["omarchy", "audio", "output", "volume", "mute-toggle"],
+            Self::PlayPause => &["omarchy-shell", "media", "playPause"],
+            Self::Play => &["omarchy-shell", "media", "play"],
+            Self::Pause => &["omarchy-shell", "media", "pause"],
+            Self::NextTrack => &["omarchy-shell", "media", "next"],
+            Self::PreviousTrack => &["omarchy-shell", "media", "previous"],
+            Self::WorkspaceNext => &["hyprctl", "dispatch", "hl.dsp.focus({workspace=\"e+1\"})"],
+            Self::WorkspacePrevious => {
+                &["hyprctl", "dispatch", "hl.dsp.focus({workspace=\"e-1\"})"]
+            }
+            Self::Screenshot => &["omarchy", "capture", "screenshot", "region"],
+        }
+    }
+}
+
+impl Action {
+    pub fn title(&self) -> String {
+        match self {
+            Self::Preset { preset } => preset.name().into(),
+            Self::Launch { command } => command.clone(),
+            Self::Shortcut { chord } => chord.clone(),
+            Self::Text { .. } => "Type text".into(),
+            Self::Command { .. } => "Run command".into(),
+        }
+    }
+    pub fn argv(&self) -> Result<Vec<String>> {
+        let argv: Vec<String> = match self {
+            Self::Preset { preset } => preset
+                .argv()
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
+            Self::Launch { command } => {
+                let argv = shell_words::split(command)
+                    .context("Check the quotes in your application command")?;
+                ensure!(
+                    !argv.is_empty() && !argv[0].is_empty(),
+                    "Enter an application command"
+                );
+                argv
+            }
+            Self::Shortcut { chord } => {
+                let (modifiers, key) = parse_shortcut(chord)?;
+                let mods = serde_json::to_string(&modifiers)?;
+                let key = serde_json::to_string(&key)?;
+                vec![
+                    "hyprctl".into(),
+                    "eval".into(),
+                    format!(
+                        "hl.dispatch(hl.dsp.send_key_state({{mods={mods},key={key},state=\"down\"}})); hl.timer(function() hl.dispatch(hl.dsp.send_key_state({{mods={mods},key={key},state=\"up\"}})) end, {{timeout=50,type=\"oneshot\"}})"
+                    ),
+                ]
+            }
+            Self::Text { text, submit } => {
+                ensure!(!text.is_empty(), "Enter some text");
+                let mut typed = text.clone();
+                if *submit {
+                    typed.push('\n');
+                }
+                vec!["wtype".into(), "--".into(), typed]
+            }
+            Self::Command { command } => {
+                ensure!(!command.trim().is_empty(), "Enter a command");
+                vec!["sh".into(), "-c".into(), command.clone()]
+            }
+        };
+        ensure!(
+            argv.iter().all(|value| !value.contains('\0')),
+            "Actions cannot contain null characters"
+        );
+        Ok(argv)
+    }
+}
+
+pub fn parse_shortcut(chord: &str) -> Result<(String, String)> {
+    let mut parts: Vec<&str> = chord.split('+').map(str::trim).collect();
+    let key = parts.pop().unwrap_or_default();
+    ensure!(
+        !key.is_empty() && key.chars().all(|ch| ch.is_alphanumeric() || ch == '_'),
+        "Use a shortcut such as Ctrl+Shift+C or F5"
+    );
+    let mut modifiers = Vec::new();
+    for modifier in parts {
+        let value = match modifier.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" => "CTRL",
+            "alt" => "ALT",
+            "shift" => "SHIFT",
+            "super" | "meta" | "win" => "SUPER",
+            _ => bail!("Unknown modifier: {modifier}"),
+        };
+        ensure!(
+            !modifiers.contains(&value),
+            "Repeated shortcut modifier: {modifier}"
+        );
+        modifiers.push(value);
+    }
+    ensure!(
+        !matches!(
+            key.to_ascii_lowercase().as_str(),
+            "ctrl" | "control" | "alt" | "shift" | "super" | "meta" | "win" | "fn"
+        ),
+        "Add a key after the modifier"
+    );
+    Ok((modifiers.join(" + "), key.into()))
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Profile {
+    pub name: String,
+    #[serde(default)]
+    pub bindings: BTreeMap<Control, BTreeMap<Phase, Action>>,
+}
+impl Default for Profile {
+    fn default() -> Self {
+        Self {
+            name: "Desktop".into(),
+            bindings: BTreeMap::new(),
+        }
+    }
+}
+impl Profile {
+    pub fn load(path: &Path) -> Result<Self> {
+        match fs::read_to_string(path) {
+            Ok(source) => Self::parse(&source),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
+            Err(error) => Err(error).context("Could not read saved bindings"),
+        }
+    }
+    pub fn parse(source: &str) -> Result<Self> {
+        let profile: Self = toml::from_str(source).context("Could not read saved bindings")?;
+        profile.validate()?;
+        Ok(profile)
+    }
+    fn validate(&self) -> Result<()> {
+        for (control, bindings) in &self.bindings {
+            for (phase, action) in bindings {
+                ensure!(
+                    (*phase == Phase::Step) == control.is_rotation(),
+                    "Invalid event for {}",
+                    control.name()
+                );
+                action.argv()?;
+            }
+        }
+        Ok(())
+    }
+    pub fn save(&self, path: &Path) -> Result<()> {
+        self.validate()?;
+        let parent = path.parent().context("Invalid configuration path")?;
+        fs::create_dir_all(parent)?;
+        let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+        temporary.write_all(toml::to_string_pretty(self)?.as_bytes())?;
+        temporary.as_file().sync_all()?;
+        temporary.persist(path)?;
+        fs::File::open(parent)?.sync_all()?;
+        Ok(())
+    }
+    pub fn action(&self, control: Control, phase: Phase) -> Option<&Action> {
+        self.bindings.get(&control)?.get(&phase)
+    }
+    pub fn assign(&mut self, control: Control, phase: Phase, action: Option<Action>) {
+        if let Some(action) = action {
+            self.bindings
+                .entry(control)
+                .or_default()
+                .insert(phase, action);
+        } else if let Some(bindings) = self.bindings.get_mut(&control) {
+            bindings.remove(&phase);
+            if bindings.is_empty() {
+                self.bindings.remove(&control);
+            }
+        }
+    }
+}
+
+pub fn config_path() -> PathBuf {
+    let root = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config")
+        });
+    root.join("work-louder/bindings.toml")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn text_submit_defaults_off_and_preserves_the_saved_snippet() {
+        let original = "--literal text\n\nCafé\n";
+        let legacy: Action = toml::from_str("kind = 'text'\ntext = 'hello'").unwrap();
+        assert_eq!(
+            legacy,
+            Action::Text {
+                text: "hello".into(),
+                submit: false
+            }
+        );
+        for submit in [false, true] {
+            let action = Action::Text {
+                text: original.into(),
+                submit,
+            };
+            let decoded: Action = toml::from_str(&toml::to_string(&action).unwrap()).unwrap();
+            assert_eq!(decoded, action);
+            assert_eq!(
+                action.argv().unwrap(),
+                [
+                    "wtype",
+                    "--",
+                    &format!("{original}{}", if submit { "\n" } else { "" })
+                ]
+            );
+        }
+    }
+    #[test]
+    fn executable_arguments_reject_null_characters() {
+        for action in [
+            Action::Text {
+                text: "text\0".into(),
+                submit: false,
+            },
+            Action::Launch {
+                command: "printf 'text\0'".into(),
+            },
+            Action::Command {
+                command: "echo text\0".into(),
+            },
+        ] {
+            assert!(action.argv().is_err());
+        }
+        assert_eq!(
+            Action::Text {
+                text: "Line 1\n\nCafé".into(),
+                submit: false,
+            }
+            .argv()
+            .unwrap(),
+            ["wtype", "--", "Line 1\n\nCafé"]
+        );
+    }
+
+    #[test]
+    fn shortcuts_validate_at_boundary() {
+        assert_eq!(
+            parse_shortcut("Ctrl+Shift+C").unwrap(),
+            ("CTRL + SHIFT".into(), "C".into())
+        );
+        for value in [
+            "",
+            "Ctrl+",
+            "Ctrl",
+            "Win",
+            "Fn",
+            "Wrong+C",
+            "Ctrl+Ctrl+C",
+            "A, activewindow",
+        ] {
+            assert!(parse_shortcut(value).is_err(), "{value}");
+        }
+    }
+    #[test]
+    fn profile_round_trip_preserves_release_and_shell_text() {
+        let mut profile = Profile::default();
+        profile.assign(
+            Control::Mic,
+            Phase::Release,
+            Some(Action::Command {
+                command: "printf '%s' '$HOME'".into(),
+            }),
+        );
+        let decoded: Profile = toml::from_str(&toml::to_string(&profile).unwrap()).unwrap();
+        assert_eq!(profile.bindings, decoded.bindings);
+    }
+    #[test]
+    fn launch_keeps_quoted_arguments_together() {
+        assert_eq!(
+            Action::Launch {
+                command: "notify-send 'Hello world'".into()
+            }
+            .argv()
+            .unwrap(),
+            ["notify-send", "Hello world"]
+        );
+    }
+
+    #[test]
+    fn invalid_save_does_not_replace_an_existing_profile() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("bindings.toml");
+        Profile::default().save(&path).unwrap();
+        let original = fs::read(&path).unwrap();
+        let mut profile = Profile::default();
+        profile.assign(
+            Control::AG00,
+            Phase::Step,
+            Some(Action::Text {
+                text: "wrong phase".into(),
+                submit: false,
+            }),
+        );
+        assert!(profile.save(&path).is_err());
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert!(Profile::parse("name = 'Desktop'\nignored = 'data'").is_err());
+    }
+
+    #[test]
+    fn simultaneous_saves_produce_complete_profiles_and_leave_no_temporary_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("bindings.toml");
+        std::thread::scope(|scope| {
+            for index in 0..8 {
+                let path = &path;
+                scope.spawn(move || {
+                    let mut profile = Profile {
+                        name: format!("Writer {index}"),
+                        ..Profile::default()
+                    };
+                    profile.assign(
+                        Control::Mic,
+                        Phase::Release,
+                        Some(Action::Text {
+                            text: "Line 1\n\nCafé".repeat(100),
+                            submit: false,
+                        }),
+                    );
+                    for _ in 0..4 {
+                        profile.save(path).unwrap();
+                        assert_eq!(Profile::load(path).unwrap().bindings, profile.bindings);
+                    }
+                });
+            }
+        });
+        assert!(Profile::load(&path).unwrap().name.starts_with("Writer "));
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+}

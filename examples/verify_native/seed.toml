@@ -1,0 +1,13 @@
+name = "Desktop"
+
+[bindings.AG05.press]
+kind = "command"
+command = "true"
+
+[bindings.AG05.release]
+kind = "command"
+command = "true"
+
+[bindings.ENC_CW.step]
+kind = "preset"
+preset = "volume_up"
