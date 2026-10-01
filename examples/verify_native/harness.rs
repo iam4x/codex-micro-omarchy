@@ -38,10 +38,8 @@ pub struct Snapshot {
     pub ai_status: String,
     pub ai_summary: String,
     pub ai_script: String,
-    pub lighting: Option<Value>,
-    pub lighting_draft: Value,
+    pub lighting: Value,
     pub lighting_target: usize,
-    pub lighting_dirty: bool,
     pub message: String,
     pub message_error: bool,
 }
