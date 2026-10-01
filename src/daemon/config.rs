@@ -81,6 +81,7 @@ mod tests {
             Control::AG00,
             Phase::Press,
             Some(Action::Text {
+                bulk: false,
                 text: "first".into(),
                 submit: false,
             }),
@@ -96,6 +97,7 @@ mod tests {
             Control::AG00,
             Phase::Press,
             Some(Action::Text {
+                bulk: false,
                 text: "other".into(),
                 submit: false,
             }),
@@ -122,6 +124,7 @@ mod tests {
             Control::Mic,
             Phase::Press,
             Some(Action::Text {
+                bulk: false,
                 text: "keep me".into(),
                 submit: false,
             }),
@@ -149,10 +152,12 @@ mod tests {
         let path = directory.path().join("bindings.toml");
         let mut profiles = Profiles::default();
         let desktop_action = Action::Text {
+            bulk: false,
             text: "desktop".into(),
             submit: false,
         };
         let work_action = Action::Text {
+            bulk: false,
             text: "work".into(),
             submit: false,
         };

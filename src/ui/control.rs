@@ -45,6 +45,7 @@ pub enum UiAction {
     FocusSearch,
     FocusInput,
     TextSubmit { enabled: bool },
+    TextBulk { enabled: bool },
     ShortcutManual { enabled: bool },
     ClearShortcut,
     ShortcutKeyUp { key: String },
@@ -88,6 +89,7 @@ struct Snapshot {
     scroll_y: f32,
     input: String,
     text_submit: bool,
+    text_bulk: bool,
     shortcut_manual: bool,
     shortcut_preview: Option<String>,
     shortcut_held: bool,
@@ -195,6 +197,10 @@ pub fn dispatch(
             .action_input()
             .update(cx, |input, cx| input.focus(window, cx)),
         UiAction::TextSubmit { enabled } => view.set_text_submit(enabled, cx),
+        UiAction::TextBulk { enabled } => {
+            view.text_bulk = enabled;
+            cx.notify();
+        }
         UiAction::ShortcutManual { enabled } => view.set_shortcut_manual(enabled, window, cx),
         UiAction::ClearShortcut => view.clear_shortcut(window, cx),
         UiAction::ShortcutKeyUp { key } => {
@@ -306,6 +312,7 @@ pub fn poll(
                     scroll_y: f32::from(view.action_scroll.offset().y),
                     input: view.action_input().read(cx).value().to_string(),
                     text_submit: view.text_submit,
+                    text_bulk: view.text_bulk,
                     shortcut_manual: view.shortcut_manual,
                     shortcut_preview: view.shortcut_capture.preview(),
                     shortcut_held: view.shortcut_capture.is_held(),
