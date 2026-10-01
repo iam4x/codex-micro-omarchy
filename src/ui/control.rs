@@ -52,6 +52,10 @@ pub enum UiAction {
     Remove,
     Reset,
     UndoReset,
+    OpenProfileDialog,
+    CancelProfileDialog,
+    SubmitProfile,
+    ActivateProfile { index: usize },
 }
 #[derive(Serialize)]
 pub struct Reply {
@@ -75,6 +79,11 @@ struct Snapshot {
     text_submit: bool,
     shortcut_preview: Option<String>,
     shortcut_held: bool,
+    profiles: Vec<String>,
+    active_profile: usize,
+    profile_dialog: bool,
+    profile_name: String,
+    profile_error: Option<String>,
 }
 
 impl Reply {
@@ -187,6 +196,10 @@ pub fn dispatch(
         UiAction::Remove => view.remove(window, cx),
         UiAction::Reset => view.reset_all(window, cx),
         UiAction::UndoReset => view.undo_reset(window, cx),
+        UiAction::OpenProfileDialog => view.open_profile_dialog(window, cx),
+        UiAction::CancelProfileDialog => view.cancel_profile_dialog(window, cx),
+        UiAction::SubmitProfile => view.submit_profile(window, cx),
+        UiAction::ActivateProfile { index } => view.activate_profile(index, window, cx)?,
     }
     Ok(())
 }
@@ -241,6 +254,16 @@ pub fn poll(
                     text_submit: view.text_submit,
                     shortcut_preview: view.shortcut_capture.preview(),
                     shortcut_held: view.shortcut_capture.is_held(),
+                    profiles: view
+                        .profiles
+                        .list()
+                        .iter()
+                        .map(|profile| profile.name.clone())
+                        .collect(),
+                    active_profile: view.profiles.active_index(),
+                    profile_dialog: view.profile_dialog,
+                    profile_name: view.profile_name.read(cx).value().to_string(),
+                    profile_error: view.profile_error.read(cx).clone(),
                 })
             }),
         };

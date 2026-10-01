@@ -29,6 +29,11 @@ pub struct Snapshot {
     pub text_submit: bool,
     pub shortcut_preview: Option<String>,
     pub shortcut_held: bool,
+    pub profiles: Vec<String>,
+    pub active_profile: usize,
+    pub profile_dialog: bool,
+    pub profile_name: String,
+    pub profile_error: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,6 +103,7 @@ pub struct NativeApp {
     pub artifacts: PathBuf,
     endpoint: PathBuf,
     accent: String,
+    binary: PathBuf,
 }
 
 impl NativeApp {
@@ -150,6 +156,7 @@ impl NativeApp {
             artifacts,
             endpoint,
             accent,
+            binary,
         };
         wait_until(|| {
             if let Some(status) = app.child.try_wait()? {
@@ -163,6 +170,28 @@ impl NativeApp {
 
     pub fn pid(&self) -> u32 {
         self.child.id()
+    }
+
+    pub fn restart(&mut self) -> Result<()> {
+        self.child.kill()?;
+        self.child.wait()?;
+        fs::remove_file(&self.endpoint)?;
+        let log = fs::OpenOptions::new()
+            .append(true)
+            .open(self.artifacts.join("native-session.log"))?;
+        self.child = Command::new(&self.binary)
+            .env("XDG_CONFIG_HOME", self.temporary.path())
+            .env("CODEX_MICRO_CONTROL_SOCKET", &self.endpoint)
+            .stdout(Stdio::from(log.try_clone()?))
+            .stderr(Stdio::from(log))
+            .spawn()?;
+        wait_until(|| {
+            if let Some(status) = self.child.try_wait()? {
+                bail!("Restarted app exited with {status}");
+            }
+            Ok(self.endpoint.exists() && self.client()?.is_some())
+        })?;
+        self.prepare_window()
     }
 
     fn client(&self) -> Result<Option<Client>> {
@@ -275,7 +304,27 @@ impl NativeApp {
             #[serde(default)]
             bindings: Bindings,
         }
-        let profile: Profile = toml::from_str(&fs::read_to_string(&self.config)?)?;
+        #[derive(Deserialize)]
+        struct Profiles {
+            active: usize,
+            profiles: Vec<Profile>,
+        }
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Configuration {
+            Multiple(Profiles),
+            Legacy(Profile),
+        }
+        let profile = match toml::from_str(&fs::read_to_string(&self.config)?)? {
+            Configuration::Legacy(profile) => profile,
+            Configuration::Multiple(mut config) => {
+                ensure!(
+                    config.active < config.profiles.len(),
+                    "Invalid active profile"
+                );
+                config.profiles.remove(config.active)
+            }
+        };
         Ok(profile.bindings)
     }
 
@@ -288,6 +337,8 @@ impl NativeApp {
     }
 
     pub fn screenshot(&self, name: &str) -> Result<()> {
+        self.focus()?;
+        thread::sleep(Duration::from_millis(150));
         let client = self.window()?;
         let [x, y] = client.at;
         let [w, h] = client.size;

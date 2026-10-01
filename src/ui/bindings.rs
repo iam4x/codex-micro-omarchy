@@ -56,7 +56,11 @@ impl CodexMicro {
     pub(super) fn load_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.shortcut_capture.reset();
         self.text_submit = false;
-        let action = self.profile.action(self.selected, self.phase).cloned();
+        let action = self
+            .profiles
+            .active()
+            .action(self.selected, self.phase)
+            .cloned();
         let text = match action {
             Some(Action::Preset { preset }) => {
                 self.tab = ActionTab::System;
@@ -122,14 +126,15 @@ impl CodexMicro {
         cx.notify();
     }
     pub(super) fn reset_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.profile.bindings.is_empty() {
+        if self.profiles.active().bindings.is_empty() {
             return;
         }
-        let mut updated = self.profile.clone();
-        updated.bindings.clear();
+        let mut updated = self.profiles.clone();
+        updated.active_mut().bindings.clear();
         match updated.save(&config_path()) {
             Ok(()) => {
-                self.reset_backup = Some(std::mem::replace(&mut self.profile, updated));
+                self.reset_backup = Some(self.profiles.active().clone());
+                self.profiles = updated;
                 self.load_editor(window, cx);
                 self.message = "All bindings removed. Use Undo reset to restore them.".into();
                 self.message_error = false;
@@ -145,9 +150,12 @@ impl CodexMicro {
         let Some(previous) = self.reset_backup.as_ref() else {
             return;
         };
-        match previous.save(&config_path()) {
+        let mut updated = self.profiles.clone();
+        *updated.active_mut() = previous.clone();
+        match updated.save(&config_path()) {
             Ok(()) => {
-                self.profile = self.reset_backup.take().unwrap();
+                self.profiles = updated;
+                self.reset_backup = None;
                 self.load_editor(window, cx);
                 self.message = "Bindings restored".into();
                 self.message_error = false;
@@ -167,7 +175,7 @@ impl CodexMicro {
         }
     }
     pub(super) fn is_dirty(&self, cx: &App) -> bool {
-        self.profile.action(self.selected, self.phase) != Some(&self.draft(cx))
+        self.profiles.active().action(self.selected, self.phase) != Some(&self.draft(cx))
     }
     pub(super) fn draft(&self, cx: &App) -> Action {
         let text = self.action_input().read(cx).value().to_string();
@@ -185,6 +193,9 @@ impl CodexMicro {
         }
     }
     pub(super) fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.profile_dialog {
+            return;
+        }
         if self.tab == ActionTab::Shortcut && self.shortcut_capture.is_held() {
             self.message = "Release all keys to finish recording first.".into();
             self.message_error = true;
@@ -198,11 +209,13 @@ impl CodexMicro {
             cx.notify();
             return;
         }
-        let mut updated = self.profile.clone();
-        updated.assign(self.selected, self.phase, Some(action.clone()));
+        let mut updated = self.profiles.clone();
+        updated
+            .active_mut()
+            .assign(self.selected, self.phase, Some(action.clone()));
         match updated.save(&config_path()) {
             Ok(()) => {
-                self.profile = updated;
+                self.profiles = updated;
                 self.reset_backup = None;
                 self.message = format!("{} assigned to {}", action.title(), self.selected.name());
                 self.message_error = false;
@@ -216,11 +229,11 @@ impl CodexMicro {
         cx.notify();
     }
     pub(super) fn remove(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let mut updated = self.profile.clone();
-        updated.assign(self.selected, self.phase, None);
+        let mut updated = self.profiles.clone();
+        updated.active_mut().assign(self.selected, self.phase, None);
         match updated.save(&config_path()) {
             Ok(()) => {
-                self.profile = updated;
+                self.profiles = updated;
                 self.reset_backup = None;
                 self.load_editor(window, cx);
                 self.message = "Binding removed".into();

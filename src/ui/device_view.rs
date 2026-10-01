@@ -10,7 +10,10 @@ impl CodexMicro {
         let p = self.palette;
         let selected = self.selected == control;
         let active = self.active.is_some_and(|(key, _)| key == control);
-        let action = self.profile.action(control, control.primary_phase());
+        let action = self
+            .profiles
+            .active()
+            .action(control, control.primary_phase());
         let title = action
             .map(Action::title)
             .unwrap_or_else(|| "Unassigned".into());
@@ -302,10 +305,15 @@ impl CodexMicro {
                         .items_center()
                         .gap_2()
                         .child(self.icon("layers", 16., p.muted))
-                        .child(div().text_size(px(12.)).child(self.profile.name.clone()))
                         .child(
-                            self.label(format!("  /  {} assigned", self.profile.bindings.len())),
-                        ),
+                            div()
+                                .text_size(px(12.))
+                                .child(self.profiles.active().name.clone()),
+                        )
+                        .child(self.label(format!(
+                            "  /  {} assigned",
+                            self.profiles.active().bindings.len()
+                        ))),
                 )
                 .child(
                     div()
@@ -334,7 +342,7 @@ impl CodexMicro {
                                 .px_3()
                                 .py_2()
                                 .text_size(px(11.))
-                                .text_color(rgb(if self.profile.bindings.is_empty() {
+                                .text_color(rgb(if self.profiles.active().bindings.is_empty() {
                                     p.muted
                                 } else {
                                     p.text

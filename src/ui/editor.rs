@@ -17,7 +17,7 @@ impl CodexMicro {
 
     pub(super) fn editor(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let p = self.palette;
-        let assigned = self.profile.action(self.selected, self.phase);
+        let assigned = self.profiles.active().action(self.selected, self.phase);
         let mut tabs = div().flex().gap_1().mb_5();
         for tab in ActionTab::ALL {
             let selected = self.tab == tab;

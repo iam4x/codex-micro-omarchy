@@ -392,18 +392,6 @@ impl Default for Profile {
     }
 }
 impl Profile {
-    pub fn load(path: &Path) -> Result<Self> {
-        match fs::read_to_string(path) {
-            Ok(source) => Self::parse(&source),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
-            Err(error) => Err(error).context("Could not read saved bindings"),
-        }
-    }
-    pub fn parse(source: &str) -> Result<Self> {
-        let profile: Self = toml::from_str(source).context("Could not read saved bindings")?;
-        profile.validate()?;
-        Ok(profile)
-    }
     fn validate(&self) -> Result<()> {
         for (control, bindings) in &self.bindings {
             for (phase, action) in bindings {
@@ -415,17 +403,6 @@ impl Profile {
                 action.argv()?;
             }
         }
-        Ok(())
-    }
-    pub fn save(&self, path: &Path) -> Result<()> {
-        self.validate()?;
-        let parent = path.parent().context("Invalid configuration path")?;
-        fs::create_dir_all(parent)?;
-        let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
-        temporary.write_all(toml::to_string_pretty(self)?.as_bytes())?;
-        temporary.as_file().sync_all()?;
-        temporary.persist(path)?;
-        fs::File::open(parent)?.sync_all()?;
         Ok(())
     }
     pub fn action(&self, control: Control, phase: Phase) -> Option<&Action> {
@@ -443,6 +420,119 @@ impl Profile {
                 self.bindings.remove(&control);
             }
         }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Profiles {
+    profiles: Vec<Profile>,
+    active: usize,
+}
+
+impl Default for Profiles {
+    fn default() -> Self {
+        Self {
+            profiles: vec![Profile::default()],
+            active: 0,
+        }
+    }
+}
+
+impl Profiles {
+    pub fn load(path: &Path) -> Result<Self> {
+        match fs::read_to_string(path) {
+            Ok(source) => Self::parse(&source),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
+            Err(error) => Err(error).context("Could not read saved profiles"),
+        }
+    }
+
+    pub fn parse(source: &str) -> Result<Self> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum SavedProfiles {
+            Collection(Profiles),
+            Legacy(Profile),
+        }
+        let saved: SavedProfiles =
+            toml::from_str(source).context("Could not read saved profiles")?;
+        let profiles = match saved {
+            SavedProfiles::Collection(profiles) => profiles,
+            SavedProfiles::Legacy(profile) => Self {
+                profiles: vec![profile],
+                active: 0,
+            },
+        };
+        profiles.validate()?;
+        Ok(profiles)
+    }
+
+    pub fn save(&self, path: &Path) -> Result<()> {
+        self.validate()?;
+        let parent = path.parent().context("Invalid configuration path")?;
+        fs::create_dir_all(parent)?;
+        let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+        temporary.write_all(toml::to_string_pretty(self)?.as_bytes())?;
+        temporary.as_file().sync_all()?;
+        temporary.persist(path)?;
+        fs::File::open(parent)?.sync_all()?;
+        Ok(())
+    }
+
+    pub fn list(&self) -> &[Profile] {
+        &self.profiles
+    }
+
+    pub fn active_index(&self) -> usize {
+        self.active
+    }
+
+    pub fn active(&self) -> &Profile {
+        &self.profiles[self.active]
+    }
+
+    pub fn active_mut(&mut self) -> &mut Profile {
+        &mut self.profiles[self.active]
+    }
+
+    pub fn add(&mut self, name: &str) -> Result<usize> {
+        let name = name.trim();
+        ensure!(!name.is_empty(), "Enter a profile name");
+        ensure!(
+            !self
+                .profiles
+                .iter()
+                .any(|profile| { profile.name.trim().to_lowercase() == name.to_lowercase() }),
+            "A profile with this name already exists"
+        );
+        let index = self.profiles.len();
+        self.profiles.push(Profile {
+            name: name.into(),
+            ..Profile::default()
+        });
+        Ok(index)
+    }
+
+    pub fn activate(&mut self, index: usize) -> Result<()> {
+        ensure!(index < self.profiles.len(), "Profile does not exist");
+        self.active = index;
+        Ok(())
+    }
+
+    fn validate(&self) -> Result<()> {
+        ensure!(
+            !self.profiles.is_empty(),
+            "At least one profile is required"
+        );
+        ensure!(
+            self.active < self.profiles.len(),
+            "Active profile does not exist"
+        );
+        for profile in &self.profiles {
+            profile.validate()?;
+        }
+        Ok(())
     }
 }
 
@@ -619,6 +709,129 @@ mod tests {
         assert_eq!(profile.bindings, decoded.bindings);
     }
     #[test]
+    fn profiles_migrate_legacy_bindings_without_rewriting_on_load() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("bindings.toml");
+        let mut legacy = Profile {
+            name: "Édition".into(),
+            ..Profile::default()
+        };
+        legacy.assign(
+            Control::Mic,
+            Phase::Release,
+            Some(Action::Text {
+                text: "Café\n\n".into(),
+                submit: true,
+            }),
+        );
+        let source = toml::to_string_pretty(&legacy).unwrap();
+        fs::write(&path, &source).unwrap();
+        let mut profiles = Profiles::load(&path).unwrap();
+        assert_eq!(profiles.list().len(), 1);
+        assert_eq!(profiles.active_index(), 0);
+        assert_eq!(profiles.active().name, legacy.name);
+        assert_eq!(profiles.active().bindings, legacy.bindings);
+        assert_eq!(fs::read_to_string(&path).unwrap(), source);
+        profiles.add("Work").unwrap();
+        profiles.save(&path).unwrap();
+        let loaded = Profiles::load(&path).unwrap();
+        assert_eq!(loaded.list().len(), 2);
+        assert_eq!(loaded.active().bindings, legacy.bindings);
+        assert!(loaded.list()[1].bindings.is_empty());
+    }
+
+    #[test]
+    fn adding_profiles_trims_names_and_preserves_the_active_profile() {
+        let mut profiles = Profiles::default();
+        profiles.active_mut().assign(
+            Control::AG00,
+            Phase::Press,
+            Some(Action::Preset {
+                preset: Preset::Terminal,
+            }),
+        );
+        assert_eq!(profiles.add("  Café  ").unwrap(), 1);
+        assert_eq!(profiles.active_index(), 0);
+        assert_eq!(profiles.list()[1].name, "Café");
+        assert!(profiles.list()[1].bindings.is_empty());
+        for name in ["", "  ", "desktop", "  CAFÉ  "] {
+            assert!(profiles.add(name).is_err(), "{name}");
+        }
+        assert_eq!(profiles.list().len(), 2);
+        assert!(profiles.activate(99).is_err());
+        assert_eq!(profiles.active_index(), 0);
+    }
+
+    #[test]
+    fn profiles_persist_active_selection_and_keep_bindings_isolated() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("bindings.toml");
+        let mut profiles = Profiles::load(&path).unwrap();
+        let first = Action::Preset {
+            preset: Preset::Terminal,
+        };
+        let second = Action::Preset {
+            preset: Preset::Browser,
+        };
+        profiles
+            .active_mut()
+            .assign(Control::AG00, Phase::Press, Some(first.clone()));
+        let other = profiles.add("Work").unwrap();
+        profiles.activate(other).unwrap();
+        assert!(profiles.active().bindings.is_empty());
+        profiles
+            .active_mut()
+            .assign(Control::AG00, Phase::Press, Some(second.clone()));
+        profiles.save(&path).unwrap();
+        let mut loaded = Profiles::load(&path).unwrap();
+        assert_eq!(loaded.active_index(), 1);
+        assert_eq!(
+            loaded.active().action(Control::AG00, Phase::Press),
+            Some(&second)
+        );
+        loaded.activate(0).unwrap();
+        assert_eq!(
+            loaded.active().action(Control::AG00, Phase::Press),
+            Some(&first)
+        );
+        assert_eq!(
+            loaded.list()[1].action(Control::AG00, Phase::Press),
+            Some(&second)
+        );
+        assert_eq!(loaded.active_index(), 0);
+    }
+
+    #[test]
+    fn profiles_reject_invalid_collections_and_inactive_bindings() {
+        for source in [
+            "profiles = []\nactive = 0",
+            "active = 1\n[[profiles]]\nname = 'Desktop'",
+            "active = 0\n[[profiles]]\nname = 'Desktop'\nunknown = 1",
+            "active = 0\nname = 'Desktop'",
+            "active = 0\n[[profiles]]\nname = 'Desktop'\n[[profiles]]\nname = 'Work'\n[profiles.bindings.AG00.step]\nkind = 'preset'\npreset = 'terminal'",
+        ] {
+            assert!(Profiles::parse(source).is_err(), "{source}");
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("bindings.toml");
+        let mut profiles = Profiles::default();
+        profiles.add("Work").unwrap();
+        profiles.save(&path).unwrap();
+        let original = fs::read(&path).unwrap();
+        profiles.activate(1).unwrap();
+        profiles.active_mut().assign(
+            Control::AG00,
+            Phase::Step,
+            Some(Action::Preset {
+                preset: Preset::Terminal,
+            }),
+        );
+        profiles.activate(0).unwrap();
+        assert!(profiles.save(&path).is_err());
+        assert_eq!(fs::read(&path).unwrap(), original);
+    }
+
+    #[test]
     fn launch_keeps_quoted_arguments_together() {
         assert_eq!(
             Action::Launch {
@@ -634,10 +847,10 @@ mod tests {
     fn invalid_save_does_not_replace_an_existing_profile() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("bindings.toml");
-        Profile::default().save(&path).unwrap();
+        Profiles::default().save(&path).unwrap();
         let original = fs::read(&path).unwrap();
-        let mut profile = Profile::default();
-        profile.assign(
+        let mut profile = Profiles::default();
+        profile.active_mut().assign(
             Control::AG00,
             Phase::Step,
             Some(Action::Text {
@@ -647,7 +860,7 @@ mod tests {
         );
         assert!(profile.save(&path).is_err());
         assert_eq!(fs::read(&path).unwrap(), original);
-        assert!(Profile::parse("name = 'Desktop'\nignored = 'data'").is_err());
+        assert!(Profiles::parse("name = 'Desktop'\nignored = 'data'").is_err());
     }
 
     #[test]
@@ -658,11 +871,9 @@ mod tests {
             for index in 0..8 {
                 let path = &path;
                 scope.spawn(move || {
-                    let mut profile = Profile {
-                        name: format!("Writer {index}"),
-                        ..Profile::default()
-                    };
-                    profile.assign(
+                    let mut profile = Profiles::default();
+                    profile.active_mut().name = format!("Writer {index}");
+                    profile.active_mut().assign(
                         Control::Mic,
                         Phase::Release,
                         Some(Action::Text {
@@ -672,12 +883,21 @@ mod tests {
                     );
                     for _ in 0..4 {
                         profile.save(path).unwrap();
-                        assert_eq!(Profile::load(path).unwrap().bindings, profile.bindings);
+                        assert_eq!(
+                            Profiles::load(path).unwrap().active().bindings,
+                            profile.active().bindings
+                        );
                     }
                 });
             }
         });
-        assert!(Profile::load(&path).unwrap().name.starts_with("Writer "));
+        assert!(
+            Profiles::load(&path)
+                .unwrap()
+                .active()
+                .name
+                .starts_with("Writer ")
+        );
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
     }
 }
