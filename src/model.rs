@@ -28,10 +28,18 @@ pub enum Control {
     DialClockwise,
     #[serde(rename = "ENC_CC")]
     DialCounterclockwise,
+    #[serde(rename = "JOY_UP")]
+    JoystickUp,
+    #[serde(rename = "JOY_RIGHT")]
+    JoystickRight,
+    #[serde(rename = "JOY_DOWN")]
+    JoystickDown,
+    #[serde(rename = "JOY_LEFT")]
+    JoystickLeft,
 }
 
 impl Control {
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 19] = [
         Self::AG00,
         Self::AG01,
         Self::AG02,
@@ -47,6 +55,10 @@ impl Control {
         Self::DialPress,
         Self::DialClockwise,
         Self::DialCounterclockwise,
+        Self::JoystickUp,
+        Self::JoystickRight,
+        Self::JoystickDown,
+        Self::JoystickLeft,
     ];
     pub fn id(self) -> &'static str {
         match self {
@@ -65,6 +77,10 @@ impl Control {
             Self::DialPress => "ENC_CLK",
             Self::DialClockwise => "ENC_CW",
             Self::DialCounterclockwise => "ENC_CC",
+            Self::JoystickUp => "JOY_UP",
+            Self::JoystickRight => "JOY_RIGHT",
+            Self::JoystickDown => "JOY_DOWN",
+            Self::JoystickLeft => "JOY_LEFT",
         }
     }
     pub fn from_id(value: &str) -> Option<Self> {
@@ -87,6 +103,10 @@ impl Control {
             Self::DialPress => "Dial press",
             Self::DialClockwise => "Dial clockwise",
             Self::DialCounterclockwise => "Dial counterclockwise",
+            Self::JoystickUp => "Joystick up",
+            Self::JoystickRight => "Joystick right",
+            Self::JoystickDown => "Joystick down",
+            Self::JoystickLeft => "Joystick left",
         }
     }
     pub fn short_name(self) -> &'static str {
@@ -106,6 +126,10 @@ impl Control {
             Self::DialPress => "Press",
             Self::DialClockwise => "Clockwise",
             Self::DialCounterclockwise => "Counterclockwise",
+            Self::JoystickUp => "Up",
+            Self::JoystickRight => "Right",
+            Self::JoystickDown => "Down",
+            Self::JoystickLeft => "Left",
         }
     }
     pub fn is_rotation(self) -> bool {

@@ -1,6 +1,6 @@
 # codex-micro-omarchy
 
-Codex Micro maps your buttons and dial to apps, shortcuts, text, commands,
+Codex Micro maps your buttons, dial, and joystick to apps, shortcuts, text, commands,
 AI-generated automations, and Omarchy actions. Its native Rust and GPUI editor
 uses your desktop colors, and a background service keeps bindings active after
 you close the window.
@@ -62,7 +62,7 @@ New profiles start with no bindings and leave the current profile active.
 
 Click a profile's checkbox to activate it. Exactly one profile stays active.
 The editor shows that profile's bindings, and the service reloads them
-automatically. Each profile keeps its own button and dial assignments.
+automatically. Each profile keeps its own button, dial, and joystick assignments.
 Switching profiles discards the current unsaved form and clears **Undo reset**.
 The profiles and active selection persist when you close the app.
 
@@ -70,12 +70,14 @@ The profiles and active selection persist when you close the app.
 
 ![Create a profile dialog with a name field and Cancel and Create profile buttons](docs/screenshots/profile-dialog.png)
 
-### Buttons, dial, and press/release bindings
+### Buttons, dial, joystick, and press/release bindings
 
 The device view numbers the twelve buttons 01 through 12, so the labels still
 make sense when you swap keycaps. You can also bind the dial press and each
-rotation direction. The joystick appears in the drawing for orientation;
-joystick binding is not implemented.
+rotation direction, plus joystick up, right, down, and left. Click an arrow
+on the joystick drawing to assign its direction. Each direction supports
+On press when you move into it and On release when you leave it. Holding a
+direction fires once; returning to center releases it.
 
 1. Click a control, or click Identify key and press the physical control.
 2. Choose On press or On release. Dial rotation uses On turn for each step.
@@ -257,6 +259,9 @@ preset = "volume_up"
 name = "Work"
 ```
 
+Joystick directions use `JOY_UP`, `JOY_RIGHT`, `JOY_DOWN`, and `JOY_LEFT`,
+with `press` and `release` events.
+
 The file uses firmware control IDs. Button 05 is `AG04`; button 11 keeps the
 ID `MIC`. Validate manual edits with `codex-micro --check-config`. If an edit
 is invalid, the running service keeps its last valid configuration and
@@ -332,7 +337,7 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 ```
 
-The unit tests cover HID framing, button switch handling, shortcut recording,
+The unit tests cover HID framing, button switch handling, joystick directions, shortcut recording,
 socket requests, configuration reloads, atomic saves, AI output validation,
 and generation process cleanup. They do not require a connected Micro.
 
@@ -346,6 +351,8 @@ cargo run --locked --example verify-native
 
 To check only profile creation, activation, and persistence, run
 `cargo run --locked --example verify-native -- --profiles`.
+To check joystick direction bindings, persistence, and removal, run
+`cargo run --locked --example verify-native -- --joystick`.
 
 It opens an editor with temporary profiles, checks the visible fields and
 keyboard input, saves and reloads bindings, and tests execution through the

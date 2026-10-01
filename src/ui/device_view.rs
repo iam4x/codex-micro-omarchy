@@ -75,6 +75,49 @@ impl CodexMicro {
             .on_click(cx.listener(move |this, _, window, cx| this.select(control, window, cx)))
     }
 
+    fn joystick_direction(
+        &self,
+        control: Control,
+        label: &'static str,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let p = self.palette;
+        let selected = self.selected == control;
+        let active = self.active.is_some_and(|(key, _)| key == control);
+        let assigned = self.profiles.active().bindings.contains_key(&control);
+        div()
+            .id(control.id())
+            .w(px(30.))
+            .h(px(24.))
+            .border_1()
+            .rounded(px(3.))
+            .border_color(rgb(if selected || active {
+                p.accent
+            } else {
+                p.border
+            }))
+            .bg(rgb(if active {
+                0x2c3945
+            } else if selected {
+                0x202a33
+            } else {
+                p.panel
+            }))
+            .text_color(rgb(if selected || assigned {
+                p.accent
+            } else {
+                p.muted
+            }))
+            .text_size(px(16.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_pointer()
+            .hover(|style| style.border_color(rgb(p.accent)))
+            .child(label)
+            .on_click(cx.listener(move |this, _, window, cx| this.select(control, window, cx)))
+    }
+
     fn board(&self, cx: &mut Context<Self>) -> Div {
         let p = self.palette;
         div()
@@ -143,27 +186,24 @@ impl CodexMicro {
                             .w(px(98.))
                             .h(px(86.))
                             .flex()
+                            .flex_col()
                             .items_center()
                             .justify_center()
+                            .gap_1()
+                            .child(self.joystick_direction(Control::JoystickUp, "↑", cx))
                             .child(
                                 div()
-                                    .size(px(62.))
-                                    .rounded_full()
-                                    .bg(rgb(p.panel))
-                                    .border_1()
-                                    .border_color(rgb(p.border))
                                     .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .child(
-                                        div()
-                                            .size(px(32.))
-                                            .rounded_full()
-                                            .bg(rgb(p.raised))
-                                            .border_1()
-                                            .border_color(rgb(p.border)),
-                                    ),
-                            ),
+                                    .gap_1()
+                                    .child(self.joystick_direction(Control::JoystickLeft, "←", cx))
+                                    .child(div().size(px(18.)).rounded_full().bg(rgb(p.raised)))
+                                    .child(self.joystick_direction(
+                                        Control::JoystickRight,
+                                        "→",
+                                        cx,
+                                    )),
+                            )
+                            .child(self.joystick_direction(Control::JoystickDown, "↓", cx)),
                     ),
             )
             .child(
@@ -256,7 +296,7 @@ impl CodexMicro {
                     .gap_2()
                     .child(div().size(px(5.)).rounded_full().bg(rgb(p.accent)))
                     .child(self.label(if self.identify {
-                        "Press a button or turn the dial to select it"
+                        "Press a button, turn the dial, or move the joystick"
                     } else {
                         "Click a control to change its action"
                     })),

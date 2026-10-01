@@ -61,9 +61,62 @@ pub struct Input {
 #[derive(Default)]
 pub struct InputDecoder {
     mic_switches: u8,
+    joystick: Option<Control>,
 }
 impl InputDecoder {
-    pub fn notification(&mut self, message: &Value) -> Option<Input> {
+    pub fn notification(&mut self, message: &Value) -> Vec<Input> {
+        if message.get("m").and_then(Value::as_str) == Some("v.oai.rad") {
+            return self.joystick_notification(message);
+        }
+        self.key_notification(message).into_iter().collect()
+    }
+
+    fn joystick_notification(&mut self, message: &Value) -> Vec<Input> {
+        let Some(angle) = message["p"]["a"].as_f64() else {
+            return Vec::new();
+        };
+        let Some(distance) = message["p"]["d"].as_f64() else {
+            return Vec::new();
+        };
+        if !(0.0..=1.0).contains(&angle) || !(0.0..=1.0).contains(&distance) {
+            return Vec::new();
+        }
+        // A smaller release threshold keeps noise near center from retriggering actions.
+        let threshold = if self.joystick.is_some() { 0.15 } else { 0.25 };
+        let next = if distance < threshold {
+            None
+        } else {
+            let sector = ((angle * 4.0 + 0.5).floor() as usize) % 4;
+            Some(
+                [
+                    Control::JoystickRight,
+                    Control::JoystickDown,
+                    Control::JoystickLeft,
+                    Control::JoystickUp,
+                ][sector],
+            )
+        };
+        if next == self.joystick {
+            return Vec::new();
+        }
+        let mut events = Vec::with_capacity(2);
+        if let Some(control) = self.joystick {
+            events.push(Input {
+                control,
+                phase: Phase::Release,
+            });
+        }
+        if let Some(control) = next {
+            events.push(Input {
+                control,
+                phase: Phase::Press,
+            });
+        }
+        self.joystick = next;
+        events
+    }
+
+    fn key_notification(&mut self, message: &Value) -> Option<Input> {
         if message.get("m")?.as_str()? != "v.oai.hid" {
             return None;
         }
@@ -131,13 +184,82 @@ mod tests {
         let mut decoder = InputDecoder::default();
         let result: Vec<_> = [("ACT10", 1), ("ACT11", 1), ("ACT10", 0), ("ACT11", 0)]
             .into_iter()
-            .filter_map(|(key, act)| {
+            .flat_map(|(key, act)| {
                 decoder.notification(&json!({"m":"v.oai.hid", "p":{"k":key,"act":act}}))
             })
             .map(|input| input.phase)
             .collect();
         assert_eq!(result, [Phase::Press, Phase::Release]);
     }
+    fn radial(decoder: &mut InputDecoder, angle: f64, distance: f64) -> Vec<(Control, Phase)> {
+        decoder
+            .notification(&json!({"m":"v.oai.rad", "p":{"a":angle,"d":distance}}))
+            .into_iter()
+            .map(|input| (input.control, input.phase))
+            .collect()
+    }
+
+    #[test]
+    fn captured_joystick_directions_press_once_and_release_at_center() {
+        let mut decoder = InputDecoder::default();
+        for (angle, control) in [
+            (0.756254, Control::JoystickUp),
+            (0.007961, Control::JoystickRight),
+            (0.244134, Control::JoystickDown),
+            (0.492427, Control::JoystickLeft),
+        ] {
+            assert_eq!(radial(&mut decoder, angle, 1.0), [(control, Phase::Press)]);
+            assert!(radial(&mut decoder, angle, 0.7).is_empty());
+            assert_eq!(radial(&mut decoder, 0.0, 0.0), [(control, Phase::Release)]);
+            assert!(radial(&mut decoder, 0.0, 0.0).is_empty());
+        }
+    }
+
+    #[test]
+    fn joystick_switches_release_before_press_and_wrap_at_zero() {
+        let mut decoder = InputDecoder::default();
+        assert_eq!(
+            radial(&mut decoder, 0.99, 1.0),
+            [(Control::JoystickRight, Phase::Press)]
+        );
+        assert!(radial(&mut decoder, 0.01, 1.0).is_empty());
+        assert_eq!(
+            radial(&mut decoder, 0.25, 1.0),
+            [
+                (Control::JoystickRight, Phase::Release),
+                (Control::JoystickDown, Phase::Press),
+            ]
+        );
+    }
+
+    #[test]
+    fn joystick_dead_zone_and_invalid_reports_preserve_state() {
+        let mut decoder = InputDecoder::default();
+        assert!(radial(&mut decoder, 0.0, 0.2).is_empty());
+        assert_eq!(
+            radial(&mut decoder, 1.0, 0.3),
+            [(Control::JoystickRight, Phase::Press)]
+        );
+        assert!(radial(&mut decoder, 0.0, 0.2).is_empty());
+        for (angle, distance) in [(-0.1, 1.0), (1.1, 1.0), (0.0, -0.1), (0.0, 1.1)] {
+            assert!(radial(&mut decoder, angle, distance).is_empty());
+        }
+        assert!(
+            decoder
+                .notification(&json!({"m":"v.oai.rad", "p":{"a":"bad","d":1}}))
+                .is_empty()
+        );
+        assert!(
+            decoder
+                .notification(&json!({"m":"v.oai.rad", "p":{"a":0}}))
+                .is_empty()
+        );
+        assert_eq!(
+            radial(&mut decoder, 0.0, 0.1),
+            [(Control::JoystickRight, Phase::Release)]
+        );
+    }
+
     #[test]
     fn invalid_frame_and_non_vendor_reports_are_handled() {
         let mut decoder = Decoder::default();

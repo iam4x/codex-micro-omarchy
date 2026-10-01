@@ -63,9 +63,10 @@ this file.
 
 Buttons 01 through 06 use `AG00` through `AG05`; buttons 07 through 10 use
 `ACT06` through `ACT09`. Button 11 is `MIC`, and button 12 is `ACT12`.
-The dial uses `ENC_CLK`, `ENC_CW`, and `ENC_CC`. The joystick is not bindable.
+The dial uses `ENC_CLK`, `ENC_CW`, and `ENC_CC`. Joystick up, right, down,
+and left use `JOY_UP`, `JOY_RIGHT`, `JOY_DOWN`, and `JOY_LEFT`.
 
-Buttons and dial press accept `press` or `release`. Dial rotation accepts only
+Buttons, joystick directions, and dial press accept `press` or `release`. Dial rotation accepts only
 `step`. Each control/event stores one action; preserve unrelated events when
 editing a profile. The AI action stores its prompt, explanation, and runnable
 script together:
