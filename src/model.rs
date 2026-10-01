@@ -432,6 +432,8 @@ pub fn parse_shortcut(chord: &str) -> Result<(String, String)> {
 #[serde(deny_unknown_fields)]
 pub struct Profile {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lighting: Option<crate::lighting::Lighting>,
     #[serde(default)]
     pub bindings: BTreeMap<Control, BTreeMap<Phase, Action>>,
 }
@@ -439,12 +441,16 @@ impl Default for Profile {
     fn default() -> Self {
         Self {
             name: "Desktop".into(),
+            lighting: None,
             bindings: BTreeMap::new(),
         }
     }
 }
 impl Profile {
     fn validate(&self) -> Result<()> {
+        if let Some(lighting) = &self.lighting {
+            lighting.validate()?;
+        }
         for (control, bindings) in &self.bindings {
             for (phase, action) in bindings {
                 ensure!(

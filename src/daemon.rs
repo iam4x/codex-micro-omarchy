@@ -56,6 +56,7 @@ pub enum Event {
         success: bool,
     },
     ConfigError(String),
+    LightingApplied,
 }
 
 #[derive(Default)]
@@ -187,17 +188,53 @@ fn device_loop(hub: SharedHub) {
             let mut report = [0; 64];
             let mut next_status = Instant::now();
             let mut request_id = 0;
+            let mut status_id = 0;
+            let mut layer = None;
+            let mut lighting_sync = crate::lighting::Sync::default();
+            let mut lighting_ids = Vec::new();
+            let mut lighting_failed = false;
             let mut last_response = Instant::now();
             loop {
                 if Instant::now() >= next_status {
                     request_id += 1;
-                    send(&device, &protocol::status_request(request_id))?;
+                    status_id = request_id;
+                    send(&device, &protocol::status_request(status_id))?;
                     next_status = Instant::now() + Duration::from_secs(3);
                 }
+                let lighting = hub.lock().unwrap().profile.lighting.clone();
+                for request in lighting_sync.update(layer, lighting.as_ref(), &mut request_id) {
+                    if lighting_ids.is_empty() {
+                        lighting_failed = false;
+                    }
+                    lighting_ids.push((request["id"].as_u64().unwrap(), Instant::now()));
+                    send(&device, &request)?;
+                }
+                anyhow::ensure!(
+                    lighting_ids
+                        .iter()
+                        .all(|(_, sent)| sent.elapsed() < Duration::from_secs(10)),
+                    "Device did not acknowledge lighting"
+                );
                 let count = device.read_timeout(&mut report, 80)?;
                 if count > 0 {
                     for message in decoder.feed(&report[..count])? {
-                        if message.get("id").and_then(Value::as_u64) == Some(request_id) {
+                        let response_id = message.get("id").and_then(Value::as_u64);
+                        if response_id.is_some_and(|id| {
+                            lighting_ids.iter().any(|(pending, _)| *pending == id)
+                        }) {
+                            lighting_ids.retain(|(id, _)| Some(*id) != response_id);
+                            if let Some(error) = message.get("error") {
+                                lighting_failed = true;
+                                publish(
+                                    &hub,
+                                    Event::ConfigError(format!(
+                                        "Device rejected lighting: {error}"
+                                    )),
+                                );
+                            } else if lighting_ids.is_empty() && !lighting_failed {
+                                publish(&hub, Event::LightingApplied);
+                            }
+                        } else if response_id == Some(status_id) {
                             if let Some(result) = message.get("result") {
                                 #[derive(Deserialize)]
                                 struct Status {
@@ -208,6 +245,7 @@ fn device_loop(hub: SharedHub) {
                                 }
                                 let result: Status = serde_json::from_value(result.clone())
                                     .context("Unexpected device status")?;
+                                layer = Some(result.layer_index);
                                 let status = DeviceStatus::Connected {
                                     transport: transport.clone(),
                                     battery: result.battery,

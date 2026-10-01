@@ -70,6 +70,47 @@ The profiles and active selection persist when you close the app.
 
 ![Create a profile dialog with a name field and Cancel and Create profile buttons](docs/screenshots/profile-dialog.png)
 
+### Lighting
+
+Open **Lighting**, enable **Customize this profile**, and select an Agent LED,
+**Command keys**, or **Border**. The color picker accepts a hex color such as
+`#FF6600`. Choose an effect, adjust brightness and speed, then click **Save
+lighting** or press Ctrl+S. **Discard changes** reloads the saved settings.
+The device drawing shows each target's base color. Animated effects run on the
+Micro itself.
+
+Each profile stores its own lighting. Existing and new profiles leave lighting
+unmanaged until you enable customization. Switching profiles discards unsaved
+lighting changes. Disabling customization and saving stops this app's lighting
+commands; the device keeps its current colors until firmware or another app
+changes them. Choose **Off** for a target to turn its LEDs off.
+
+The service applies saved lighting on the Codex device layer, layer index 1,
+and restores it after reconnecting, even when the editor is closed. It does
+not write lighting to device flash. Other device layers retain their own
+lighting. The footer reports **Lighting applied to your Micro** after firmware
+acknowledges both lighting commands, or displays a firmware error.
+
+| Target | Controls |
+| --- | --- |
+| Agent 01 through Agent 06 | Separate color and effect for each of six LEDs |
+| Command keys | One shared color and effect for the lower key backlights |
+| Border | Separate color and effect for the perimeter LEDs |
+
+Colors use 24-bit RGB, with 16,777,216 possible values. Brightness and speed
+range from 0% to 100%. Effects are **Off**, **Solid**, **Snake**, **Rainbow**,
+**Breathing**, **Gradient**, and **Gentle breathing**. Rainbow generates its own
+colors. Speed applies to animated effects.
+
+[Work Louder's setup guide](https://worklouder.cc/openai-micro-setup) confirms
+six RGB Agent Keys and the underglow. Its public guide does not specify the
+color depth or protocol effect codes. The implementation uses the
+[original Linux protocol research](https://github.com/boopdotpng/work-louder-oai/blob/main/docs/PROTOCOL.md#lighting)
+for the RGB fields and lighting groups. See [lighting protocol notes](docs/lighting.md)
+for the wire format and verification commands.
+
+![Lighting page with independent Agent colors and a turquoise border](docs/screenshots/lighting.png)
+
 ### Buttons, dial, joystick, and press/release bindings
 
 The device view numbers the twelve buttons 01 through 12, so the labels still
