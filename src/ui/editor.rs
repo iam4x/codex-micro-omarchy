@@ -1,6 +1,8 @@
 use super::{ActionTab, CodexMicro};
 use crate::model::{Action, Phase, Preset};
-use gpui::{App, Context, Div, FontWeight, SharedString, Window, div, prelude::*, px, rgb};
+use gpui::{
+    App, Context, Div, FontWeight, Rgba, SharedString, Window, div, prelude::*, px, rgb, rgba,
+};
 use gpui_component::{Sizable, input::Input, switch::Switch};
 
 impl CodexMicro {
@@ -328,74 +330,133 @@ impl CodexMicro {
                     .pb_5()
                     .child(action_form),
             )
+            .child(self.footer(assigned.is_some(), cx))
+    }
+}
+
+impl CodexMicro {
+    fn footer(&self, assigned: bool, cx: &mut Context<Self>) -> Div {
+        let p = self.palette;
+        let dirty = self.is_dirty(cx);
+        let (dot, state, hint) = match (assigned, dirty) {
+            (true, false) => (p.green, "Saved", "Active on your device"),
+            (true, true) => (p.accent, "Unsaved changes", "Ctrl+S to save"),
+            (false, _) => (p.muted, "Not assigned", "Ctrl+S to assign"),
+        };
+        let button = |id: &'static str, enabled: bool, hover: Rgba| {
+            div()
+                .id(id)
+                .h(px(33.))
+                .px_3()
+                .border_1()
+                .border_color(rgb(p.border))
+                .rounded(px(3.))
+                .text_size(px(11.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .gap_2()
+                .text_color(rgb(if enabled { p.text } else { p.muted }))
+                .when(enabled, |button| {
+                    button.cursor_pointer().hover(move |style| style.bg(hover))
+                })
+                .when(!enabled, |button| button.opacity(0.5))
+        };
+        div()
+            .flex_shrink_0()
+            .p_5()
+            .border_t_1()
+            .border_color(rgb(p.border))
+            .flex()
+            .flex_col()
+            .gap_3()
             .child(
                 div()
-                    .flex_shrink_0()
-                    .p_5()
-                    .border_t_1()
-                    .border_color(rgb(p.border))
                     .flex()
-                    .flex_col()
+                    .items_center()
+                    .gap_2()
+                    .child(div().size(px(6.)).rounded_full().bg(rgb(dot)))
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(rgb(if dirty && assigned { p.text } else { p.muted }))
+                            .child(state),
+                    )
+                    .child(div().flex_1())
+                    .child(self.label(hint)),
+            )
+            .child(
+                div()
+                    .id("save-binding")
+                    .h(px(42.))
+                    .rounded(px(3.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(px(12.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .gap_2()
+                    .map(|button| {
+                        if dirty {
+                            button
+                                .bg(rgb(p.accent))
+                                .text_color(rgb(p.panel))
+                                .cursor_pointer()
+                                .hover(|style| style.opacity(0.85))
+                                .child(self.icon("check", 16., p.panel))
+                                .child(if assigned {
+                                    "Save changes"
+                                } else {
+                                    "Assign action"
+                                })
+                                .on_click(cx.listener(|this, _, window, cx| this.save(window, cx)))
+                        } else {
+                            button
+                                .border_1()
+                                .border_color(rgb(p.border))
+                                .text_color(rgb(p.muted))
+                                .child(self.icon("check", 16., p.green))
+                                .child("Saved")
+                        }
+                    }),
+            )
+            .child(
+                div()
+                    .flex()
                     .gap_3()
                     .child(
-                        div()
-                            .id("save-binding")
-                            .h(px(42.))
-                            .bg(rgb(p.accent))
-                            .rounded(px(3.))
-                            .text_color(rgb(p.panel))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_size(px(12.))
-                            .cursor_pointer()
-                            .hover(|style| style.bg(rgb(0x96b6d6)))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .gap_2()
-                            .child(self.icon("check", 16., p.panel))
-                            .child("Save binding")
-                            .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
+                        button("test-action", true, rgb(p.raised))
+                            .flex_1()
+                            .child(self.icon("play", 12., p.muted))
+                            .child("Test action")
+                            .on_click(cx.listener(|this, _, _, cx| this.test(cx))),
                     )
                     .child(
-                        div()
-                            .flex()
-                            .gap_3()
-                            .child(
-                                div()
-                                    .id("test-action")
-                                    .flex_1()
-                                    .h(px(33.))
-                                    .border_1()
-                                    .border_color(rgb(p.border))
-                                    .rounded(px(3.))
-                                    .text_size(px(11.))
-                                    .cursor_pointer()
-                                    .hover(|style| style.bg(rgb(p.raised)))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .child("Test action")
-                                    .on_click(cx.listener(|this, _, _, cx| this.test(cx))),
-                            )
-                            .child(
-                                div()
-                                    .id("remove-binding")
-                                    .flex_1()
-                                    .h(px(33.))
-                                    .text_size(px(11.))
-                                    .text_color(rgb(p.muted))
-                                    .cursor_pointer()
-                                    .hover(|style| style.text_color(rgb(p.red)))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .child("Remove binding")
-                                    .on_click(
-                                        cx.listener(|this, _, window, cx| this.remove(window, cx)),
-                                    ),
-                            ),
-                    )
-                    .child(self.label("Saved locally. Changes apply automatically.")),
+                        button("discard-changes", dirty && assigned, rgb(p.raised))
+                            .flex_1()
+                            .child("Discard changes")
+                            .when(dirty && assigned, |button| {
+                                button.on_click(
+                                    cx.listener(|this, _, window, cx| this.discard(window, cx)),
+                                )
+                            }),
+                    ),
+            )
+            .child(
+                button("remove-binding", assigned, rgba(p.red << 8 | 0x1a))
+                    .border_color(if assigned {
+                        rgba(p.red << 8 | 0x55)
+                    } else {
+                        rgba(p.border << 8 | 0xff)
+                    })
+                    .text_color(rgb(if assigned { p.red } else { p.muted }))
+                    .child(self.icon("circle-x", 13., if assigned { p.red } else { p.muted }))
+                    .child("Remove binding")
+                    .when(assigned, |button| {
+                        button.on_click(
+                            cx.listener(|this, _, window, cx| this.confirm_remove(window, cx)),
+                        )
+                    }),
             )
     }
 }

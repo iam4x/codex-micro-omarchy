@@ -3,8 +3,10 @@ use crate::{
     daemon,
     model::{Action, Control, Phase, Preset, config_path},
 };
-use gpui::{App, Context, Entity, Window, point, px};
-use gpui_component::input::InputState;
+use gpui::{App, Context, Entity, ParentElement, Styled, Window, div, point, px, rgb};
+use gpui_component::{
+    WindowExt, button::ButtonVariant, dialog::DialogButtonProps, input::InputState,
+};
 
 #[derive(Clone, Copy, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -227,6 +229,54 @@ impl CodexMicro {
             }
         }
         cx.notify();
+    }
+    pub(super) fn discard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.load_editor(window, cx);
+        self.message = "Changes discarded".into();
+        self.message_error = false;
+        cx.notify();
+    }
+    pub(super) fn confirm_remove(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(action) = self.profiles.active().action(self.selected, self.phase) else {
+            return;
+        };
+        let view = cx.entity();
+        let muted = rgb(self.palette.muted);
+        let title = action.title();
+        let target = if self.selected.is_rotation() {
+            self.selected.name().to_string()
+        } else {
+            format!("{} · {}", self.selected.name(), self.phase.label())
+        };
+        window.open_dialog(cx, move |dialog, _, _| {
+            let view = view.clone();
+            dialog
+                .confirm()
+                .w(px(380.))
+                .title("Remove binding?")
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(format!("{target}  ·  {title}"))
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(muted)
+                                .child("The button will do nothing until you assign a new action."),
+                        ),
+                )
+                .button_props(
+                    DialogButtonProps::default()
+                        .ok_text("Remove")
+                        .ok_variant(ButtonVariant::Danger),
+                )
+                .on_ok(move |_, window, cx| {
+                    view.update(cx, |this, cx| this.remove(window, cx));
+                    true
+                })
+        });
     }
     pub(super) fn remove(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut updated = self.profiles.clone();
