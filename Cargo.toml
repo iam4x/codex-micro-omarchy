@@ -27,6 +27,9 @@ smol = "2"
 tempfile = "3"
 toml = "0.8"
 
+[patch.crates-io]
+stacksafe-macro = { path = "vendor/stacksafe-macro" }
+
 [profile.dev]
 debug = 0
 
