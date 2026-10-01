@@ -71,6 +71,11 @@ impl Palette {
         theme.colors.ring = rgb(self.accent).into();
         theme.colors.caret = rgb(self.accent).into();
         theme.colors.selection = rgb(self.raised).into();
+        theme.colors.danger = rgb(self.red).into();
+        theme.colors.danger_hover = rgb(self.red).into();
+        theme.colors.danger_active = rgb(self.red).into();
+        theme.colors.danger_foreground = rgb(self.panel).into();
+        theme.colors.overlay = gpui::hsla(0., 0., 0., 0.55);
         theme.font_family = "Inter".into();
         theme.font_size = px(14.);
         theme.radius = px(3.);

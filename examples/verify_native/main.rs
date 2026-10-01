@@ -561,7 +561,20 @@ fn check_reset(app: &NativeApp) -> Result<()> {
         "Undo did not restore the exact profile"
     );
     println!("PASS: reset removed all controls and phases; undo restored them exactly");
-    app.ui(json!({"action": "remove"}))?;
+    app.ui(json!({"action": "confirm_remove"}))?;
+    thread::sleep(Duration::from_millis(300));
+    app.screenshot("native-remove-dialog")?;
+    app.key("escape")?;
+    thread::sleep(Duration::from_millis(300));
+    ensure!(
+        app.bindings()? == before,
+        "Cancelling the remove dialog changed bindings"
+    );
+    app.ui(json!({"action": "confirm_remove"}))?;
+    thread::sleep(Duration::from_millis(300));
+    app.key("enter")?;
+    wait_until(|| Ok(!app.bindings()?.contains_key("AG00")))
+        .context("Confirming the remove dialog did not remove the binding")?;
     let bindings = app.bindings()?;
     ensure!(
         !bindings.contains_key("AG00")
@@ -569,6 +582,8 @@ fn check_reset(app: &NativeApp) -> Result<()> {
             && bindings.contains_key("ENC_CW"),
         "Remove changed another control"
     );
-    println!("PASS: remove cleared only the selected binding");
+    println!(
+        "PASS: remove asks for confirmation, Escape cancels, Enter clears only the selected binding"
+    );
     Ok(())
 }
