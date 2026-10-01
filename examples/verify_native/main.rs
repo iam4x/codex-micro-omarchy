@@ -726,10 +726,10 @@ fn check_lighting(app: &mut NativeApp) -> Result<()> {
     app.ui(json!({"action":"lighting_page","open":true}))?;
     let effects = [
         "solid",
-        "snake",
+        "breath",
         "rainbow",
         "breath",
-        "gradient",
+        "solid",
         "off",
         "shallow_breath",
         "solid",
@@ -757,6 +757,7 @@ fn check_lighting(app: &mut NativeApp) -> Result<()> {
         app.inspect()?.lighting_target == Some(2),
         "Device key did not select Key 03"
     );
+    app.screenshot("native-lighting-single-key")?;
     app.ui(json!({"action":"lighting_page","open":false}))?;
     ensure!(
         app.inspect()?.input == "printf keep-lighting-draft",

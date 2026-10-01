@@ -26,7 +26,8 @@ effect = "snake"
 The six Agent entries use `[[profiles.lighting.agents]]`. Omit the array to
 use six default lights. Defaults are solid `#81A1C1`, 40% brightness and 40%
 speed. Effect names in TOML are `off`, `solid`, `snake`, `rainbow`, `breath`,
-`gradient`, and `shallow_breath`.
+`gradient`, and `shallow_breath`. The editor hides Snake and Gradient for individual
+keys because those effects require a zone with multiple LEDs.
 
 The service owns the HID connection and writes both commands in its device
 loop. The config watcher never writes to HID. A new connection starts with

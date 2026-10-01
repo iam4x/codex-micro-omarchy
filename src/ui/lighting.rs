@@ -257,6 +257,9 @@ impl CodexMicro {
         let light = self.lighting.settings.light(target);
         let mut effects = div().flex().flex_wrap().gap_2();
         for effect in Effect::ALL {
+            if target < 6 && matches!(effect, Effect::Snake | Effect::Gradient) {
+                continue;
+            }
             effects = effects.child(
                 div()
                     .id(SharedString::from(format!(
