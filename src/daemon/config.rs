@@ -58,7 +58,7 @@ pub(super) fn start(hub: SharedHub) {
     refresh(&mut watcher, &hub, &mut last_error);
     thread::spawn(move || {
         loop {
-            thread::sleep(Duration::from_millis(400));
+            thread::sleep(Duration::from_millis(50));
             refresh(&mut watcher, &hub, &mut last_error);
         }
     });

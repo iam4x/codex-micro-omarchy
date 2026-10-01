@@ -72,18 +72,16 @@ The profiles and active selection persist when you close the app.
 
 ### Lighting
 
-Open **Lighting**, enable **Customize this profile**, and select an Agent LED,
-**Command keys**, or **Border**. The color picker accepts a hex color such as
-`#FF6600`. Choose an effect, adjust brightness and speed, then click **Save
-lighting** or press Ctrl+S. **Discard changes** reloads the saved settings.
-The device drawing shows each target's base color. Animated effects run on the
-Micro itself.
+Open **Lighting** and select **Key 01** through **Key 06**, **Command keys**,
+or **Border**. The color picker accepts a hex color such as `#FF6600`.
+Choose an effect and adjust brightness or speed. Every change saves and applies
+automatically, so the Micro responds as you edit. Speed appears only for animated
+effects. The device drawing shows each target's base color.
 
-Each profile stores its own lighting. Existing and new profiles leave lighting
-unmanaged until you enable customization. Switching profiles discards unsaved
-lighting changes. Disabling customization and saving stops this app's lighting
-commands; the device keeps its current colors until firmware or another app
-changes them. Choose **Off** for a target to turn its LEDs off.
+Each profile has lighting enabled by default and keeps its own colors and
+effects. Existing profiles without lighting settings use solid `#81A1C1` at
+35% brightness. Choose **Off** for a target to turn its LEDs off. Lighting edits
+preserve unsaved binding edits.
 
 The service applies saved lighting on the Codex device layer, layer index 1,
 and restores it after reconnecting, even when the editor is closed. It does
@@ -93,7 +91,7 @@ acknowledges both lighting commands, or displays a firmware error.
 
 | Target | Controls |
 | --- | --- |
-| Agent 01 through Agent 06 | Separate color and effect for each of six LEDs |
+| Key 01 through Key 06 | Separate color and effect for each of six LEDs |
 | Command keys | One shared color and effect for the lower key backlights |
 | Border | Separate color and effect for the perimeter LEDs |
 

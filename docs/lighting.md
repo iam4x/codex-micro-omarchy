@@ -1,7 +1,8 @@
 # Lighting protocol
 
-The app saves an optional `lighting` table in each profile. Omitted lighting
-means that the app sends no lighting commands. Configuration validation rejects
+Every profile has lighting enabled. The editor saves each change immediately
+and the service checks for configuration updates every 50 milliseconds.
+Omitted `lighting` tables load the default settings. Configuration validation rejects
 colors above `0xFFFFFF` and brightness or speed above 100 before replacing the
 saved file. The six-element `agents` array fixes the number of individual LEDs.
 
@@ -68,7 +69,7 @@ CODEX_MICRO_BINARY="$PWD/target/debug/codex-micro" \
   cargo run --locked --example verify-native -- --lighting
 ```
 
-This check saves all eight targets, restarts the editor, tests profile
-isolation, discards edits, checks key selection, and releases lighting
-control. Its screenshot is `artifacts/native-lighting.png`. It does not
+This check verifies immediate persistence for all eight targets, restarts the
+editor, checks profile isolation and key selection, and preserves binding edits.
+It captures Solid, Off, and Breathing to check which controls appear. Its screenshot is `artifacts/native-lighting.png`. It does not
 modify the user's saved profiles.

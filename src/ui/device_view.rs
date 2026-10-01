@@ -17,11 +17,8 @@ impl CodexMicro {
             Control::AG05 => 5,
             _ => 6,
         };
-        let light = self.lighting.draft.light(target);
-        let light_color = if self.lighting.enabled
-            && light.effect != crate::lighting::Effect::Off
-            && light.brightness > 0
-        {
+        let light = self.lighting.settings.light(target);
+        let light_color = if light.effect != crate::lighting::Effect::Off && light.brightness > 0 {
             light.color
         } else {
             p.border
@@ -160,11 +157,10 @@ impl CodexMicro {
             .border_1()
             .border_color(rgb(
                 if self.lighting.page
-                    && self.lighting.enabled
-                    && self.lighting.draft.ambient.effect != crate::lighting::Effect::Off
-                    && self.lighting.draft.ambient.brightness > 0
+                    && self.lighting.settings.ambient.effect != crate::lighting::Effect::Off
+                    && self.lighting.settings.ambient.brightness > 0
                 {
-                    self.lighting.draft.ambient.color
+                    self.lighting.settings.ambient.color
                 } else {
                     p.border
                 },
@@ -347,35 +343,39 @@ impl CodexMicro {
                         }
                     })),
             )
-            .child(
-                div()
-                    .w(px(468.))
-                    .mt_3()
-                    .border_t_1()
-                    .border_color(rgb(p.border))
-                    .pt_4()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(self.label("LIVE ACTIVITY")),
-            );
-        for activity in self.activity.iter().take(2) {
-            body = body.child(
-                div()
-                    .w(px(468.))
-                    .text_size(px(11.))
-                    .text_color(rgb(p.muted))
-                    .child(activity.clone()),
-            );
-        }
-        if self.activity.is_empty() {
-            body = body.child(
-                div()
-                    .w(px(468.))
-                    .text_size(px(11.))
-                    .text_color(rgb(p.muted))
-                    .child("Device events and action results appear here."),
-            );
+            .when(!self.lighting.page, |body| {
+                body.child(
+                    div()
+                        .w(px(468.))
+                        .mt_3()
+                        .border_t_1()
+                        .border_color(rgb(p.border))
+                        .pt_4()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(self.label("LIVE ACTIVITY")),
+                )
+            });
+        if !self.lighting.page {
+            for activity in self.activity.iter().take(2) {
+                body = body.child(
+                    div()
+                        .w(px(468.))
+                        .text_size(px(11.))
+                        .text_color(rgb(p.muted))
+                        .child(activity.clone()),
+                );
+            }
+            if self.activity.is_empty() {
+                body = body.child(
+                    div()
+                        .w(px(468.))
+                        .text_size(px(11.))
+                        .text_color(rgb(p.muted))
+                        .child("Device events and action results appear here."),
+                );
+            }
         }
         let mut panel = div().flex_1().min_w_0().h_full().flex().flex_col().child(
             div()

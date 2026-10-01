@@ -704,14 +704,14 @@ fn check_reset(app: &NativeApp) -> Result<()> {
 
 fn check_lighting(app: &mut NativeApp) -> Result<()> {
     let bindings = app.bindings()?;
+    let defaults = app.inspect()?.lighting;
     ensure!(
-        app.inspect()?.lighting.is_none(),
-        "Legacy lighting should be unmanaged"
+        defaults["keys"]["effect"] == "solid",
+        "Legacy profile must enable default lighting"
     );
     app.ui(json!({"action":"tab","tab":"command"}))?;
     app.type_text("printf keep-lighting-draft")?;
     app.ui(json!({"action":"lighting_page","open":true}))?;
-    app.ui(json!({"action":"lighting_enabled","enabled":true}))?;
     let effects = [
         "solid",
         "snake",
@@ -728,85 +728,100 @@ fn check_lighting(app: &mut NativeApp) -> Result<()> {
     for (target, effect) in effects.into_iter().enumerate() {
         app.ui(json!({"action":"lighting_target","target":target}))?;
         app.ui(json!({"action":"lighting_value","light":{"color":colors[target],"effect":effect,"brightness":60,"speed":30}}))?;
+        check_saved_lighting(app)?;
+        let state = app.inspect()?.lighting;
+        let actual = match target {
+            0..=5 => &state["agents"][target],
+            6 => &state["keys"],
+            _ => &state["ambient"],
+        };
+        ensure!(
+            actual == &json!({"color":colors[target],"effect":effect,"brightness":60,"speed":30}),
+            "Lighting target {target} did not apply its new value"
+        );
     }
     app.ui(json!({"action":"select","control":"AG02"}))?;
+    ensure!(
+        app.inspect()?.lighting_target == 2,
+        "Device key did not select Key 03"
+    );
     app.ui(json!({"action":"lighting_page","open":false}))?;
     ensure!(
         app.inspect()?.input == "printf keep-lighting-draft",
-        "Lighting selection discarded the binding draft"
+        "Lighting selection discarded binding draft"
     );
     app.ui(json!({"action":"lighting_page","open":true}))?;
     app.ui(json!({"action":"lighting_target","target":7}))?;
-    let draft = app.inspect()?.lighting_draft;
-    ensure!(
-        app.inspect()?.lighting_dirty,
-        "Lighting draft should be dirty"
-    );
+    let lighting = app.inspect()?.lighting;
     ensure!(
         !app.request(json!({"op":"ui","action":"lighting_target","target":8}))?
             .ok,
         "Invalid target accepted"
     );
+    let original = fs::read_to_string(&app.config)?;
     app.key("ctrl-s")?;
     ensure!(
-        app.inspect()?.lighting == Some(draft.clone()) && !app.inspect()?.lighting_dirty,
-        "Lighting save failed"
+        fs::read_to_string(&app.config)? == original && app.bindings()? == bindings,
+        "Ctrl+S in lighting changed bindings"
     );
-    ensure!(app.bindings()? == bindings, "Lighting changed bindings");
     app.screenshot("native-lighting")?;
+    app.ui(json!({"action":"lighting_value","light":{"color":0,"effect":"off","brightness":0,"speed":0}}))?;
+    check_saved_lighting(app)?;
+    app.screenshot("native-lighting-off")?;
+    app.ui(json!({"action":"lighting_value","light":{"color":0x2dd4bf,"effect":"breath","brightness":60,"speed":30}}))?;
+    check_saved_lighting(app)?;
+    app.screenshot("native-lighting-breath")?;
+    let animated = app.inspect()?.lighting;
     app.restart()?;
     ensure!(
-        app.inspect()?.lighting == Some(draft.clone()),
-        "Lighting did not reload"
+        app.inspect()?.lighting == animated,
+        "Automatic lighting changes did not reload"
     );
     app.ui(json!({"action":"lighting_page","open":true}))?;
-    app.ui(json!({"action":"select","control":"AG02"}))?;
-    ensure!(
-        app.inspect()?.lighting_target == 2,
-        "Device key did not select Agent LED"
-    );
     app.ui(json!({"action":"select","control":"MIC"}))?;
     ensure!(
         app.inspect()?.lighting_target == 6,
         "Command key did not select grouped LEDs"
-    );
-    app.ui(json!({"action":"lighting_value","light":{"color":0,"effect":"off","brightness":0,"speed":0}}))?;
-    app.ui(json!({"action":"discard_lighting"}))?;
-    ensure!(
-        app.inspect()?.lighting_draft == draft && !app.inspect()?.lighting_dirty,
-        "Discard failed"
     );
     app.ui(json!({"action":"open_profile_dialog"}))?;
     app.type_text("Lighting test")?;
     app.ui(json!({"action":"submit_profile"}))?;
     app.ui(json!({"action":"activate_profile","index":1}))?;
     ensure!(
-        app.inspect()?.lighting.is_none(),
-        "New profile inherited lighting"
+        app.inspect()?.lighting == defaults,
+        "New profile must enable independent default lighting"
     );
     app.ui(json!({"action":"activate_profile","index":0}))?;
     ensure!(
-        app.inspect()?.lighting_draft == draft,
+        app.inspect()?.lighting == animated,
         "Switching profiles lost lighting"
     );
     app.ui(json!({"action":"reset"}))?;
     app.ui(json!({"action":"lighting_target","target":7}))?;
     app.ui(json!({"action":"lighting_value","light":{"color":0xff6600,"effect":"breath","brightness":45,"speed":50}}))?;
-    app.ui(json!({"action":"save_lighting"}))?;
     let after_reset = app.inspect()?.lighting;
     app.ui(json!({"action":"undo_reset"}))?;
     ensure!(
         app.inspect()?.lighting == after_reset && app.bindings()? == bindings,
         "Undo reset reverted lighting or lost bindings"
     );
-    app.ui(json!({"action":"lighting_enabled","enabled":false}))?;
-    app.ui(json!({"action":"save_lighting"}))?;
     ensure!(
-        app.inspect()?.lighting.is_none(),
-        "Disabling did not release lighting control"
+        lighting["ambient"]["effect"] == "solid",
+        "Solid screenshot used wrong effect"
     );
     println!(
-        "PASS: eight lighting targets, effects, save/reload, discard, key selection, profile isolation, and opt-out"
+        "PASS: lighting applies and saves every change, defaults are enabled, profiles stay independent, and bindings stay intact"
+    );
+    Ok(())
+}
+
+fn check_saved_lighting(app: &NativeApp) -> Result<()> {
+    let state = app.inspect()?;
+    let saved: toml::Value = toml::from_str(&fs::read_to_string(&app.config)?)?;
+    let stored = serde_json::to_value(&saved["profiles"][state.active_profile]["lighting"])?;
+    ensure!(
+        stored == state.lighting,
+        "Lighting change was not saved immediately"
     );
     Ok(())
 }

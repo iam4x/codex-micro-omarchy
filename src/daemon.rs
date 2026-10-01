@@ -202,7 +202,7 @@ fn device_loop(hub: SharedHub) {
                     next_status = Instant::now() + Duration::from_secs(3);
                 }
                 let lighting = hub.lock().unwrap().profile.lighting.clone();
-                for request in lighting_sync.update(layer, lighting.as_ref(), &mut request_id) {
+                for request in lighting_sync.update(layer, &lighting, &mut request_id) {
                     if lighting_ids.is_empty() {
                         lighting_failed = false;
                     }

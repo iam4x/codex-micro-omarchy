@@ -9,13 +9,11 @@ use gpui::{
 use gpui_component::{
     color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState},
     slider::{Slider, SliderEvent, SliderState},
-    switch::Switch,
 };
 
 pub(super) struct LightingEditor {
     pub page: bool,
-    pub enabled: bool,
-    pub draft: Lighting,
+    pub settings: Lighting,
     pub target: usize,
     color: Entity<ColorPickerState>,
     brightness: Entity<SliderState>,
@@ -42,30 +40,30 @@ impl LightingEditor {
         let subscriptions = vec![
             cx.subscribe(&color, |this, _, event: &ColorPickerEvent, cx| {
                 if let ColorPickerEvent::Change(Some(color)) = event {
-                    this.lighting.draft.light_mut(this.lighting.target).color = picker_rgb(*color);
-                    cx.notify();
+                    this.lighting.settings.light_mut(this.lighting.target).color =
+                        picker_rgb(*color);
+                    this.apply_lighting(cx);
                 }
             }),
             cx.subscribe(&brightness, |this, _, event: &SliderEvent, cx| {
                 let SliderEvent::Change(value) = event;
                 this.lighting
-                    .draft
+                    .settings
                     .light_mut(this.lighting.target)
                     .brightness = value.start().round() as u8;
-                cx.notify();
+                this.apply_lighting(cx);
             }),
             cx.subscribe(&speed, |this, _, event: &SliderEvent, cx| {
                 let SliderEvent::Change(value) = event;
-                this.lighting.draft.light_mut(this.lighting.target).speed =
+                this.lighting.settings.light_mut(this.lighting.target).speed =
                     value.start().round() as u8;
-                cx.notify();
+                this.apply_lighting(cx);
             }),
         ];
         (
             Self {
                 page: false,
-                enabled: false,
-                draft: Lighting::default(),
+                settings: Lighting::default(),
                 target: 7,
                 color,
                 brightness,
@@ -76,12 +74,12 @@ impl LightingEditor {
     }
 }
 const TARGETS: [&str; 8] = [
-    "Agent 01",
-    "Agent 02",
-    "Agent 03",
-    "Agent 04",
-    "Agent 05",
-    "Agent 06",
+    "Key 01",
+    "Key 02",
+    "Key 03",
+    "Key 04",
+    "Key 05",
+    "Key 06",
     "Command keys",
     "Border",
 ];
@@ -99,9 +97,7 @@ impl CodexMicro {
         cx.notify();
     }
     pub(super) fn load_lighting(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let saved = self.profiles.active().lighting.clone();
-        self.lighting.enabled = saved.is_some();
-        self.lighting.draft = saved.unwrap_or_default();
+        self.lighting.settings = self.profiles.active().lighting.clone();
         self.select_light(self.lighting.target, window, cx);
     }
     pub(super) fn select_light(
@@ -111,7 +107,7 @@ impl CodexMicro {
         cx: &mut Context<Self>,
     ) {
         self.lighting.target = target;
-        let light = *self.lighting.draft.light(target);
+        let light = *self.lighting.settings.light(target);
         self.lighting.color.update(cx, |state, cx| {
             state.set_value(rgb(light.color), window, cx)
         });
@@ -123,20 +119,13 @@ impl CodexMicro {
         });
         cx.notify();
     }
-    pub(super) fn lighting_dirty(&self) -> bool {
-        let draft = self.lighting.enabled.then_some(&self.lighting.draft);
-        draft != self.profiles.active().lighting.as_ref()
-    }
-    pub(super) fn save_lighting(&mut self, cx: &mut Context<Self>) {
-        if self.profile_dialog {
-            return;
-        }
+    pub(super) fn apply_lighting(&mut self, cx: &mut Context<Self>) {
         let mut updated = self.profiles.clone();
-        updated.active_mut().lighting = self.lighting.enabled.then(|| self.lighting.draft.clone());
+        updated.active_mut().lighting = self.lighting.settings.clone();
         match updated.save(&config_path()) {
             Ok(()) => {
                 self.profiles = updated;
-                self.message = if self.lighting.enabled { "Lighting saved. Applies when connected on the Codex layer." } else { "Lighting control released. The device keeps its current colors until another app updates them." }.into();
+                self.message = "Lighting updated".into();
                 self.message_error = false;
             }
             Err(error) => {
@@ -148,12 +137,11 @@ impl CodexMicro {
     }
     pub(super) fn lighting_panel(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let p = self.palette;
-        let light = self.lighting.draft.light(self.lighting.target);
-        let enabled = self.lighting.enabled;
+        let light = self.lighting.settings.light(self.lighting.target);
         let mut targets = div().flex().flex_wrap().gap_2();
         for (index, name) in TARGETS.into_iter().enumerate() {
             let selected = self.lighting.target == index;
-            let setting = self.lighting.draft.light(index);
+            let setting = self.lighting.settings.light(index);
             targets =
                 targets.child(
                     div()
@@ -168,7 +156,7 @@ impl CodexMicro {
                         .items_center()
                         .gap_2()
                         .child(div().size(px(8.)).rounded_full().bg(rgb(
-                            if enabled && setting.effect != Effect::Off && setting.brightness > 0 {
+                            if setting.effect != Effect::Off && setting.brightness > 0 {
                                 setting.color
                             } else {
                                 p.border
@@ -197,14 +185,15 @@ impl CodexMicro {
                     } else {
                         p.border
                     }))
-                    .text_color(rgb(if enabled { p.text } else { p.muted }))
-                    .when(enabled, |el| el.cursor_pointer())
+                    .text_color(rgb(p.text))
+                    .cursor_pointer()
                     .child(effect.label())
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        if this.lighting.enabled {
-                            this.lighting.draft.light_mut(this.lighting.target).effect = effect;
-                            cx.notify();
-                        }
+                        this.lighting
+                            .settings
+                            .light_mut(this.lighting.target)
+                            .effect = effect;
+                        this.apply_lighting(cx);
                     })),
             );
         }
@@ -225,15 +214,10 @@ impl CodexMicro {
                 self.profiles.active().name
             )))
             .child(
-                Switch::new("lighting-enabled")
-                    .label("Customize this profile")
-                    .checked(enabled)
-                    .on_click(cx.listener(|this, value, _, cx| {
-                        this.lighting.enabled = *value;
-                        cx.notify();
-                    })),
+                self.label(
+                    "Six individual key LEDs, grouped Command keys, and an independent border.",
+                ),
             )
-            .child(self.label("Six Agent LEDs, grouped Command keys, and an independent border."))
             .child(targets)
             .child(
                 div()
@@ -250,14 +234,14 @@ impl CodexMicro {
                     .gap_4()
                     .child(self.label("COLOR"))
                     .when(
-                        enabled && !matches!(light.effect, Effect::Off | Effect::Rainbow),
+                        !matches!(light.effect, Effect::Off | Effect::Rainbow),
                         |row| {
                             row.child(ColorPicker::new(&self.lighting.color))
                                 .child(self.label(format!("#{:06X}", light.color)))
                         },
                     )
                     .when(
-                        !enabled || matches!(light.effect, Effect::Off | Effect::Rainbow),
+                        matches!(light.effect, Effect::Off | Effect::Rainbow),
                         |row| row.child(self.label(format!("#{:06X}", light.color))),
                     ),
             )
@@ -269,56 +253,19 @@ impl CodexMicro {
                     .child(self.label(format!("BRIGHTNESS  {}%", light.brightness)))
                     .child(
                         Slider::new(&self.lighting.brightness)
-                            .disabled(!enabled || light.effect == Effect::Off),
+                            .disabled(light.effect == Effect::Off),
                     ),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .child(self.label(format!("SPEED  {}%", light.speed)))
-                    .child(
-                        Slider::new(&self.lighting.speed)
-                            .disabled(!enabled || !light.effect.animated()),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap_3()
-                    .child(
-                        div()
-                            .id("save-lighting")
-                            .px_4()
-                            .py_2()
-                            .rounded(px(4.))
-                            .bg(rgb(p.accent))
-                            .text_color(rgb(p.panel))
-                            .cursor_pointer()
-                            .child("Save lighting")
-                            .on_click(cx.listener(|this, _, _, cx| this.save_lighting(cx))),
-                    )
-                    .child(
-                        div()
-                            .id("discard-lighting")
-                            .px_4()
-                            .py_2()
-                            .border_1()
-                            .border_color(rgb(p.border))
-                            .rounded(px(4.))
-                            .cursor_pointer()
-                            .child("Discard changes")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.load_lighting(window, cx)),
-                            ),
-                    )
-                    .child(self.label(if self.lighting_dirty() {
-                        "Unsaved changes"
-                    } else {
-                        "Saved"
-                    })),
-            )
+            .when(light.effect.animated(), |panel| {
+                panel.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(self.label(format!("SPEED  {}%", light.speed)))
+                        .child(Slider::new(&self.lighting.speed)),
+                )
+            })
     }
 }
 

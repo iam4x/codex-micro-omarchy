@@ -251,7 +251,6 @@ impl CodexMicro {
             return;
         }
         if self.lighting.page {
-            self.save_lighting(cx);
             return;
         }
         if self.tab == ActionTab::Ai && !self.ai_can_run(cx) {

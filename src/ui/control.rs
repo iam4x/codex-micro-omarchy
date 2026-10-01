@@ -59,11 +59,8 @@ pub enum UiAction {
     SubmitProfile,
     ActivateProfile { index: usize },
     LightingPage { open: bool },
-    LightingEnabled { enabled: bool },
     LightingTarget { target: usize },
     LightingValue { light: crate::lighting::Light },
-    SaveLighting,
-    DiscardLighting,
     GenerateAi,
     CancelAi,
 }
@@ -98,10 +95,8 @@ struct Snapshot {
     ai_status: &'static str,
     ai_summary: String,
     ai_script: String,
-    lighting: Option<crate::lighting::Lighting>,
-    lighting_draft: crate::lighting::Lighting,
+    lighting: crate::lighting::Lighting,
     lighting_target: usize,
-    lighting_dirty: bool,
     message: String,
     message_error: bool,
 }
@@ -223,21 +218,16 @@ pub fn dispatch(
         UiAction::SubmitProfile => view.submit_profile(window, cx),
         UiAction::ActivateProfile { index } => view.activate_profile(index, window, cx)?,
         UiAction::LightingPage { open } => view.show_lighting(open, window, cx),
-        UiAction::LightingEnabled { enabled } => {
-            view.lighting.enabled = enabled;
-            cx.notify();
-        }
         UiAction::LightingTarget { target } => {
             anyhow::ensure!(target < 8, "Invalid lighting target");
             view.select_light(target, window, cx);
         }
         UiAction::LightingValue { light } => {
             light.validate()?;
-            *view.lighting.draft.light_mut(view.lighting.target) = light;
+            *view.lighting.settings.light_mut(view.lighting.target) = light;
             view.select_light(view.lighting.target, window, cx);
+            view.apply_lighting(cx);
         }
-        UiAction::SaveLighting => view.save_lighting(cx),
-        UiAction::DiscardLighting => view.load_lighting(window, cx),
         UiAction::GenerateAi => view.generate_ai(cx),
         UiAction::CancelAi => view.cancel_ai(cx),
     }
@@ -317,9 +307,7 @@ pub fn poll(
                         .map(|output| output.script.clone())
                         .unwrap_or_default(),
                     lighting: view.profiles.active().lighting.clone(),
-                    lighting_draft: view.lighting.draft.clone(),
                     lighting_target: view.lighting.target,
-                    lighting_dirty: view.lighting_dirty(),
                     message: view.message.clone(),
                     message_error: view.message_error,
                 })

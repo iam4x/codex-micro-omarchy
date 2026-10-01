@@ -150,17 +150,11 @@ pub struct Sync {
     applied: Option<Lighting>,
 }
 impl Sync {
-    pub fn update(
-        &mut self,
-        layer: Option<u64>,
-        lighting: Option<&Lighting>,
-        id: &mut u64,
-    ) -> Vec<Value> {
-        if layer != Some(1) || lighting.is_none() {
+    pub fn update(&mut self, layer: Option<u64>, lighting: &Lighting, id: &mut u64) -> Vec<Value> {
+        if layer != Some(1) {
             self.applied = None;
             return Vec::new();
         }
-        let lighting = lighting.unwrap();
         if self.applied.as_ref() == Some(lighting) {
             return Vec::new();
         }
@@ -211,31 +205,24 @@ mod tests {
         assert_eq!(decoded, requests);
     }
     #[test]
-    fn sync_is_opt_in_layer_scoped_and_replays_changes_and_reconnections() {
+    fn sync_is_layer_scoped_and_replays_changes_and_reconnections() {
         let mut sync = Sync::default();
         let mut id = 0;
         let mut lighting = Lighting::default();
-        assert!(sync.update(Some(1), None, &mut id).is_empty());
-        assert!(sync.update(None, Some(&lighting), &mut id).is_empty());
-        assert!(sync.update(Some(2), Some(&lighting), &mut id).is_empty());
-        assert_eq!(sync.update(Some(1), Some(&lighting), &mut id).len(), 2);
-        assert!(sync.update(Some(1), Some(&lighting), &mut id).is_empty());
+        assert!(sync.update(None, &lighting, &mut id).is_empty());
+        assert!(sync.update(Some(2), &lighting, &mut id).is_empty());
+        assert_eq!(sync.update(Some(1), &lighting, &mut id).len(), 2);
+        assert!(sync.update(Some(1), &lighting, &mut id).is_empty());
         lighting.agents[0].color = 0;
-        assert_eq!(sync.update(Some(1), Some(&lighting), &mut id).len(), 2);
-        assert!(sync.update(Some(0), Some(&lighting), &mut id).is_empty());
-        assert_eq!(sync.update(Some(1), Some(&lighting), &mut id).len(), 2);
-        assert_eq!(
-            Sync::default()
-                .update(Some(1), Some(&lighting), &mut id)
-                .len(),
-            2
-        );
+        assert_eq!(sync.update(Some(1), &lighting, &mut id).len(), 2);
+        assert!(sync.update(Some(0), &lighting, &mut id).is_empty());
+        assert_eq!(sync.update(Some(1), &lighting, &mut id).len(), 2);
+        assert_eq!(Sync::default().update(Some(1), &lighting, &mut id).len(), 2);
     }
     #[test]
-    fn legacy_profiles_opt_out_and_invalid_lighting_cannot_replace_saved_config() {
+    fn legacy_profiles_have_default_lighting_and_invalid_changes_cannot_replace_saved_config() {
         let mut profiles = Profiles::parse("name = 'Legacy'\n").unwrap();
-        assert!(profiles.active().lighting.is_none());
-        profiles.active_mut().lighting = Some(Lighting::default());
+        assert_eq!(profiles.active().lighting, Lighting::default());
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(config_path().file_name().unwrap());
         profiles.save(&path).unwrap();
@@ -258,7 +245,7 @@ mod tests {
                 ..Light::default()
             },
         ] {
-            profiles.active_mut().lighting.as_mut().unwrap().keys = invalid;
+            profiles.active_mut().lighting.keys = invalid;
             assert!(profiles.save(&path).is_err());
             assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
         }
