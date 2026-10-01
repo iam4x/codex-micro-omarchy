@@ -1,9 +1,10 @@
 # codex-micro-omarchy
 
-Codex Micro maps your buttons, dial, and joystick to apps, shortcuts, text, commands,
-AI-generated automations, and Omarchy actions. Its native Rust and GPUI editor
-uses your desktop colors, and a background service keeps bindings active after
-you close the window.
+Codex Micro maps your buttons, dial, and joystick to apps, shortcuts, text,
+commands, AI-generated automations, and Omarchy actions. Set LED colors and
+effects, or make individual keys light up when pressed. The native Rust and GPUI
+editor uses your desktop colors. A background service runs your bindings and
+lighting after you close the window.
 
 ![Codex Micro showing numbered buttons, dial controls, and the action editor](docs/screenshots/overview.png)
 
@@ -72,53 +73,51 @@ The profiles and active selection persist when you close the app.
 
 ### Lighting
 
-Open **Lighting** and select **Key 01** through **Key 06**, **Command keys**,
-or **Border**. The color picker accepts a hex color such as `#FF6600`.
-Choose an effect and adjust brightness or speed. Colors and effects apply
-immediately. Sliders update the preview while dragging and save when you release
-the handle. Both sliders snap to 10% steps, with ticks from 0% to 100%.
-Brightness is hidden for Off, and speed appears only for animated
-effects. Snake and Gradient are available only for Command keys and Border.
-Controls appear after selecting a key or lighting zone. The device drawing shows
-each target's base color.
+Open Lighting and select a key or lighting zone to show its controls. Each
+profile keeps its own colors and effects. New profiles and profiles without
+lighting settings start with solid `#81A1C1` at 40% brightness.
 
-Each profile has lighting enabled by default and keeps its own colors and
-effects. Existing profiles without lighting settings use solid `#81A1C1` at
-40% brightness. Choose **Off** for a target to turn its LEDs off. Lighting edits
-preserve unsaved binding edits.
-
-For Key 01 through Key 06, enable **Reactive: light on press** to keep the LED
-dark until pressed, then flash the selected color and brightness for 0.4 seconds.
-Repeated presses extend the flash. Disable Reactive to restore the saved effect.
-The background service handles the flash while the settings window is closed.
-
-![Reactive lighting toggle, color picker, and brightness control](docs/screenshots/lighting-reactive.png)
-
-The service applies saved lighting on the Codex device layer, layer index 1,
-and restores it after reconnecting, even when the editor is closed. It does
-not write lighting to device flash. Other device layers retain their own
-lighting. The footer reports **Lighting applied to your Micro** after firmware
-acknowledges the lighting update, or displays a firmware error.
-
-| Target | Controls |
+| Target | What it controls |
 | --- | --- |
-| Key 01 through Key 06 | Separate color and effect for each of six LEDs |
-| Command keys | One shared color and effect for the lower key backlights |
-| Border | Separate color and effect for the perimeter LEDs |
+| Key 01 through Key 06 | Each upper key LED separately, with an optional Reactive mode |
+| Command keys | All seven lower key LEDs as one group |
+| Border | The perimeter LEDs |
 
-Colors use 24-bit RGB, with 16,777,216 possible values. Brightness and speed
-range from 0% to 100%. Effects are **Off**, **Solid**, **Snake**, **Rainbow**,
-**Breathing**, **Gradient**, and **Gentle breathing**. Rainbow generates its own
-colors. Speed applies to animated effects.
+Pick a color or enter a hex value such as `#FF6600`. Choose Off to turn a target's
+LEDs off. The available effects are Solid, Rainbow, Breathing, and Gentle
+breathing, plus Snake and Gradient for Command keys and Border. Rainbow supplies
+its own colors.
 
-[Work Louder's setup guide](https://worklouder.cc/openai-micro-setup) confirms
-six RGB Agent Keys and the underglow. Its public guide does not specify the
-color depth or protocol effect codes. The implementation uses the
-[original Linux protocol research](https://github.com/boopdotpng/work-louder-oai/blob/main/docs/PROTOCOL.md#lighting)
-for the RGB fields and lighting groups. See [lighting protocol notes](docs/lighting.md)
-for the wire format and verification commands.
+![Lighting panel with Border selected, a hex color picker, and brightness ticks](docs/screenshots/lighting.png)
 
-![Lighting page with independent Agent colors and a turquoise border](docs/screenshots/lighting.png)
+Colors and effects save and apply immediately. Brightness and speed snap to 10%
+steps, including 0% and 100%. Dragging updates the preview; releasing the handle
+saves the value and sends it to the Micro. Brightness is hidden for Off. Speed
+appears only for animated effects.
+
+![Breathing effect with brightness and speed sliders marked from 0% to 100%](docs/screenshots/lighting-breathing.png)
+
+#### Light on press
+
+Select Key 01 through Key 06 and enable **Reactive: light on press**. The LED stays
+dark until you press the key, then flashes your chosen color and brightness for
+0.4 seconds. Repeated presses extend the flash. Color and brightness remain
+editable; switching Reactive off restores the saved effect.
+
+![Reactive mode for Key 01, with the idle LED dark and color and brightness controls visible](docs/screenshots/lighting-reactive.png)
+
+The service handles lighting on the Codex device layer, layer 1, and restores it
+after reconnecting. Reactive mode works with the editor closed. Settings stay on
+your computer, and lighting edits preserve unsaved binding edits. The footer
+reports "Lighting applied to your Micro" when the firmware acknowledges an
+update, or displays a firmware error.
+
+[Work Louder's setup guide](https://worklouder.cc/openai-micro-setup) describes the
+six RGB Agent Keys and underglow. The
+[Linux protocol research](https://github.com/boopdotpng/work-louder-oai/blob/main/docs/PROTOCOL.md#lighting)
+documents the RGB fields and lighting groups. See our
+[lighting protocol notes](docs/lighting.md) for configuration examples and
+verification commands.
 
 ### Buttons, dial, joystick, and press/release bindings
 
@@ -462,6 +461,7 @@ allows access only to the current user. Documentation screenshots live in
 | `src/ai.rs` | Local Codex generation and output validation |
 | `src/model.rs` | Controls, actions, validation, saved profiles |
 | `src/protocol.rs` | HID reports and device input decoding |
+| `src/lighting.rs` | LED settings, firmware commands, and Reactive flash timers |
 | `src/daemon.rs`, `src/daemon/` | Device connection, action execution, IPC, config reloads |
 | `src/theme.rs`, `assets/` | Omarchy colors and embedded icons |
 | `scripts/install.sh` | Release build and installation |
