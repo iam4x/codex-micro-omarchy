@@ -8,15 +8,25 @@ use serde_json::json;
 use std::{fs, thread, time::Duration};
 
 fn main() -> Result<()> {
-    let app = NativeApp::start()?;
-    let result = verify(&app);
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    let profiles_only = match arguments.as_slice() {
+        [] => false,
+        [flag] if flag == "--profiles" => true,
+        _ => anyhow::bail!("Usage: verify-native [--profiles]"),
+    };
+    let mut app = NativeApp::start()?;
+    let result = if profiles_only {
+        check_profiles(&mut app)
+    } else {
+        verify(&mut app)
+    };
     if result.is_err() {
         let _ = app.screenshot("native-failure");
     }
     result
 }
 
-fn verify(app: &NativeApp) -> Result<()> {
+fn verify(app: &mut NativeApp) -> Result<()> {
     ensure!(
         !app.request(json!({"op": "ui", "action": "phase", "phase": "step"}))?
             .ok,
@@ -31,6 +41,7 @@ fn verify(app: &NativeApp) -> Result<()> {
         "Control socket stopped responding"
     );
     println!("PASS: invalid UI commands return errors without disabling the control socket");
+    check_profiles(app).context("Multiple profiles")?;
     check_search(app).context("System action search")?;
     check_forms(app).context("Action forms")?;
     check_phases(app).context("Press/release switching")?;
@@ -55,6 +66,127 @@ fn verify(app: &NativeApp) -> Result<()> {
     println!("PASS: all five media actions can be assigned");
     app.screenshot("native-media")?;
     println!("PASS: Native GPUI callback and keyboard smoke check");
+    Ok(())
+}
+
+fn check_profiles(app: &mut NativeApp) -> Result<()> {
+    let initial = app.inspect()?;
+    ensure!(
+        initial.profiles == ["Desktop"] && initial.active_profile == 0,
+        "Legacy profile was not imported: {initial:?}"
+    );
+    let original = fs::read_to_string(&app.config)?;
+    let bindings = app.bindings()?;
+    app.screenshot("native-profile-legacy")?;
+    app.ui(json!({"action": "open_profile_dialog"}))?;
+    ensure!(app.inspect()?.profile_dialog, "Create dialog did not open");
+    app.screenshot("native-profile-dialog")?;
+    app.type_text("Cancelled")?;
+    app.key("ctrl-s")?;
+    ensure!(
+        fs::read_to_string(&app.config)? == original,
+        "Ctrl+S in the dialog saved a background binding"
+    );
+    app.ui(json!({"action": "cancel_profile_dialog"}))?;
+    ensure!(
+        !app.inspect()?.profile_dialog && fs::read_to_string(&app.config)? == original,
+        "Cancel changed the saved profiles"
+    );
+    app.ui(json!({"action": "open_profile_dialog"}))?;
+    app.type_text("Escaped")?;
+    app.key("escape")?;
+    ensure!(
+        !app.inspect()?.profile_dialog && fs::read_to_string(&app.config)? == original,
+        "Escape did not cancel the dialog"
+    );
+    app.ui(json!({"action": "open_profile_dialog"}))?;
+    app.key("enter")?;
+    ensure!(
+        app.inspect()?.profile_dialog && fs::read_to_string(&app.config)? == original,
+        "Empty name created a profile"
+    );
+    app.type_text("  Café work  ")?;
+    ensure!(
+        app.inspect()?.profile_name == "  Café work  ",
+        "Profile name input did not receive keyboard text"
+    );
+    app.key("enter")?;
+    let created = app.inspect()?;
+    ensure!(
+        created.profiles == ["Desktop", "Café work"]
+            && created.active_profile == 0
+            && !created.profile_dialog,
+        "Enter did not create an inactive profile: {created:?}"
+    );
+    ensure!(
+        app.bindings()? == bindings,
+        "Creation changed active bindings"
+    );
+    app.ui(json!({"action": "open_profile_dialog"}))?;
+    app.type_text("café WORK")?;
+    app.key("enter")?;
+    let duplicate = app.inspect()?;
+    ensure!(
+        duplicate.profile_dialog
+            && duplicate.profile_error.is_some()
+            && duplicate.profiles.len() == 2,
+        "Duplicate name did not stay in the dialog with an error: {duplicate:?}"
+    );
+    app.screenshot("native-profile-duplicate")?;
+    app.ui(json!({"action": "cancel_profile_dialog"}))?;
+    app.ui(json!({"action": "activate_profile", "index": 1}))?;
+    let switched = app.inspect()?;
+    ensure!(
+        switched.active_profile == 1 && app.bindings()?.is_empty(),
+        "New profile did not activate with empty bindings: {switched:?}"
+    );
+    let selected_config = fs::read_to_string(&app.config)?;
+    app.ui(json!({"action": "activate_profile", "index": 1}))?;
+    ensure!(
+        app.inspect()?.active_profile == 1 && fs::read_to_string(&app.config)? == selected_config,
+        "Active profile could be unchecked"
+    );
+    ensure!(
+        !app.request(json!({"op": "ui", "action": "activate_profile", "index": 99}))?
+            .ok,
+        "Out-of-range profile accepted"
+    );
+    app.ui(json!({"action": "tab", "tab": "text"}))?;
+    app.type_text("Only in Café work")?;
+    app.ui(json!({"action": "save"}))?;
+    let work_bindings = app.bindings()?;
+    app.ui(json!({"action": "reset"}))?;
+    app.ui(json!({"action": "open_profile_dialog"}))?;
+    app.type_text("Gaming")?;
+    app.key("enter")?;
+    app.ui(json!({"action": "undo_reset"}))?;
+    ensure!(
+        app.bindings()? == work_bindings && app.inspect()?.profiles.len() == 3,
+        "Undo reset removed a new profile or failed to restore active bindings"
+    );
+    app.restart()?;
+    let reopened = app.inspect()?;
+    ensure!(
+        reopened.profiles == ["Desktop", "Café work", "Gaming"]
+            && reopened.active_profile == 1
+            && reopened.input == "Only in Café work"
+            && app.bindings()? == work_bindings,
+        "Profiles, activation, or bindings failed to survive restart: {reopened:?}"
+    );
+    app.screenshot("native-profiles")?;
+    app.ui(json!({"action": "reset"}))?;
+    app.ui(json!({"action": "activate_profile", "index": 0}))?;
+    app.ui(json!({"action": "undo_reset"}))?;
+    ensure!(
+        app.bindings()? == bindings && app.inspect()?.active_profile == 0,
+        "Profile activation leaked reset undo into another profile"
+    );
+    println!(
+        "PASS: native profile dialog handles Cancel, Escape, Enter, Unicode, blank and duplicate names, and isolates Ctrl+S"
+    );
+    println!(
+        "PASS: profiles preserve separate bindings, one active selection, reset isolation, and restart persistence"
+    );
     Ok(())
 }
 

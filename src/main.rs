@@ -18,10 +18,10 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Some("--check-config") => {
-            let config = model::Profile::load(&model::config_path())?;
+            let config = model::Profiles::load(&model::config_path())?;
             println!(
                 "{} bindings in {}",
-                config.bindings.len(),
+                config.active().bindings.len(),
                 model::config_path().display()
             );
             Ok(())

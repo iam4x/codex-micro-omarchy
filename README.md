@@ -53,6 +53,22 @@ to the Codex Micro device identified by `303a:8360`.
 
 ## Features
 
+### Profiles
+
+Click **Add profile** below the profiles list, enter a name, and click **Create
+profile** or press Enter. **Cancel** or Escape closes the dialog without saving.
+New profiles start with no bindings and leave the current profile active.
+
+Click a profile's checkbox to activate it. Exactly one profile stays active.
+The editor shows that profile's bindings, and the service reloads them
+automatically. Each profile keeps its own button and dial assignments.
+Switching profiles discards the current unsaved form and clears **Undo reset**.
+The profiles and active selection persist when you close the app.
+
+![Three profiles with Café work active and Add profile below the list](docs/screenshots/profiles.png)
+
+![Create a profile dialog with a name field and Cancel and Create profile buttons](docs/screenshots/profile-dialog.png)
+
 ### Buttons, dial, and press/release bindings
 
 The device view numbers the twelve buttons 01 through 12, so the labels still
@@ -164,29 +180,36 @@ switching desktop themes.
 
 | File | Purpose |
 | --- | --- |
-| `~/.config/work-louder/bindings.toml` | Saved actions |
+| `~/.config/work-louder/bindings.toml` | Profiles, active selection, and saved actions |
 | `~/.local/state/omarchy/current/theme/colors.toml` | Desktop colors |
 
-The bindings path keeps the name used by earlier releases, so existing profiles
-continue to work. The paths follow `XDG_CONFIG_HOME` and `XDG_STATE_HOME` when set. Bindings stay
+The app imports existing single-profile files without losing their bindings.
+The next save writes all profiles and the active index to the same file.
+The paths follow `XDG_CONFIG_HOME` and `XDG_STATE_HOME` when set. Bindings stay
 on this computer and run through the local service.
 
-For example, this profile assigns a text snippet to button 05 and volume up
-to a clockwise dial step:
+For example, this file has Desktop active and an empty Work profile. Desktop
+assigns a text snippet to button 05 and volume up to a clockwise dial step:
 
 ```toml
+active = 0
+
+[[profiles]]
 name = "Desktop"
 
-[bindings.AG04.press]
+[profiles.bindings.AG04.press]
 kind = "text"
 text = """Thanks for the review!
 
 I will take a look and get back to you."""
 submit = true
 
-[bindings.ENC_CW.step]
+[profiles.bindings.ENC_CW.step]
 kind = "preset"
 preset = "volume_up"
+
+[[profiles]]
+name = "Work"
 ```
 
 The file uses firmware control IDs. Button 05 is `AG04`; button 11 keeps the
@@ -276,9 +299,13 @@ session. The Rust verifier needs `grim` and ImageMagick:
 cargo run --locked --example verify-native
 ```
 
-It opens an editor with a temporary profile, checks the visible fields and
+To check only profile creation, activation, and persistence, run
+`cargo run --locked --example verify-native -- --profiles`.
+
+It opens an editor with temporary profiles, checks the visible fields and
 keyboard input, saves and reloads bindings, and tests execution through the
-running service. It also checks text submission, Esc recording, reset and
+running service. It also checks profile creation, cancellation, activation,
+binding isolation, restart persistence, text submission, Esc recording, reset and
 undo, and media assignments. The verifier leaves your saved bindings and
 desktop pointer alone. It focuses the temporary window for text delivery,
 captures screenshots in `artifacts/`, and closes that window afterward. On

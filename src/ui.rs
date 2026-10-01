@@ -4,13 +4,14 @@ mod device_view;
 mod editor;
 mod events;
 mod layout;
+mod profiles;
 mod shortcut;
 
 actions!(codex_micro, [SaveBinding]);
 
 use crate::{
     daemon::{DeviceStatus, Event},
-    model::{Control, Phase, Preset, Profile, config_path},
+    model::{Control, Phase, Preset, Profile, Profiles, config_path},
     theme::{Assets, Palette},
 };
 use gpui::{
@@ -28,7 +29,10 @@ use bindings::ActionTab;
 
 pub(super) struct CodexMicro {
     palette: Palette,
-    profile: Profile,
+    profiles: Profiles,
+    profile_dialog: bool,
+    profile_name: Entity<InputState>,
+    profile_error: Entity<Option<String>>,
     selected: Control,
     phase: Phase,
     tab: ActionTab,
@@ -52,7 +56,7 @@ pub(super) struct CodexMicro {
 }
 
 impl CodexMicro {
-    fn new(profile: Profile, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(profiles: Profiles, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let palette = Palette::load();
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter an action"));
         let subscription = cx.subscribe(&input, |_, _, event, cx| {
@@ -79,6 +83,22 @@ impl CodexMicro {
                 cx.notify();
             }
         });
+        let profile_name = cx.new(|cx| InputState::new(window, cx).placeholder("Profile name"));
+        let profile_error = cx.new(|_| None);
+        let profile_subscription =
+            cx.subscribe_in(&profile_name, window, |this, _, event, window, cx| {
+                if !this.profile_dialog {
+                    return;
+                }
+                match event {
+                    InputEvent::Change => {
+                        this.profile_error.update(cx, |error, _| *error = None);
+                        cx.notify();
+                    }
+                    InputEvent::PressEnter { .. } => this.submit_profile(window, cx),
+                    _ => {}
+                }
+            });
         let recorder = cx.weak_entity();
         let intercept_subscription = cx.intercept_keystrokes(move |event, window, cx| {
             let _ = recorder.update(cx, |this, cx| {
@@ -106,7 +126,10 @@ impl CodexMicro {
         Self::start_events(window, cx);
         let mut view = Self {
             palette,
-            profile,
+            profiles,
+            profile_dialog: false,
+            profile_name,
+            profile_error,
             selected: Control::AG00,
             phase: Phase::Press,
             tab: ActionTab::System,
@@ -128,6 +151,7 @@ impl CodexMicro {
             focus: cx.focus_handle(),
             _subscriptions: vec![
                 subscription,
+                profile_subscription,
                 text_subscription,
                 search_subscription,
                 blur_subscription,
@@ -201,7 +225,7 @@ pub fn run() -> anyhow::Result<()> {
             .status()?;
         return Ok(());
     }
-    let profile = Profile::load(&config_path())?;
+    let profiles = Profiles::load(&config_path())?;
     Application::new()
         .with_assets(Assets)
         .run(move |cx: &mut App| {
@@ -235,7 +259,7 @@ pub fn run() -> anyhow::Result<()> {
                 },
                 move |window, cx| {
                     window.set_window_title("Codex Micro");
-                    let view = cx.new(|cx| CodexMicro::new(profile, window, cx));
+                    let view = cx.new(|cx| CodexMicro::new(profiles, window, cx));
                     cx.new(|cx| Root::new(view, window, cx))
                 },
             );
