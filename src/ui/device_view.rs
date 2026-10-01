@@ -322,14 +322,16 @@ impl CodexMicro {
             .gap_5()
             .py_8()
             .child(self.board(cx))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_3()
-                    .child(self.label("DIAL"))
-                    .child(dial_controls),
-            )
+            .when(!self.lighting.page, |body| {
+                body.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_3()
+                        .child(self.label("DIAL"))
+                        .child(dial_controls),
+                )
+            })
             .child(
                 div()
                     .flex()
