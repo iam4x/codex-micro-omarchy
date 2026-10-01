@@ -259,16 +259,18 @@ impl CodexMicro {
                         .text_color(rgb(p.muted))
                         .child(help),
                 )
-                .child(
-                    div()
-                        .mt_3()
-                        .p_3()
-                        .bg(rgb(p.raised))
-                        .rounded(px(3.))
-                        .text_size(px(11.))
-                        .font_family("CaskaydiaMono Nerd Font")
-                        .child(example),
-                );
+                .when(self.tab != ActionTab::Text, |form| {
+                    form.child(
+                        div()
+                            .mt_3()
+                            .p_3()
+                            .bg(rgb(p.raised))
+                            .rounded(px(3.))
+                            .text_size(px(11.))
+                            .font_family("CaskaydiaMono Nerd Font")
+                            .child(example),
+                    )
+                });
         }
         let mut phase_selector = div().flex().gap_2().mb_5();
         if !self.selected.is_rotation() {
