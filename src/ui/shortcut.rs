@@ -206,13 +206,32 @@ fn chord(modifiers: &Modifiers, key: Option<&str>) -> String {
 }
 
 impl CodexMicro {
+    pub(super) fn set_shortcut_manual(
+        &mut self,
+        manual: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.shortcut_capture.reset();
+        self.shortcut_manual = manual;
+        if manual {
+            self.input.update(cx, |input, cx| input.focus(window, cx));
+        } else {
+            window.focus(&self.shortcut_focus);
+        }
+        cx.notify();
+    }
+
     pub(super) fn shortcut_key_down(
         &mut self,
         event: &KeyDownEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.tab != ActionTab::Shortcut || !self.shortcut_focus.is_focused(window) {
+        if self.tab != ActionTab::Shortcut
+            || self.shortcut_manual
+            || !self.shortcut_focus.is_focused(window)
+        {
             return;
         }
         cx.stop_propagation();
@@ -223,7 +242,11 @@ impl CodexMicro {
         self.shortcut_capture.reset();
         self.input
             .update(cx, |input, cx| input.set_value("", window, cx));
-        window.focus(&self.shortcut_focus);
+        if self.shortcut_manual {
+            self.input.update(cx, |input, cx| input.focus(window, cx));
+        } else {
+            window.focus(&self.shortcut_focus);
+        }
         self.message = "Shortcut cleared. Press a new shortcut.".into();
         self.message_error = false;
         cx.notify();
@@ -234,7 +257,10 @@ impl CodexMicro {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.tab != ActionTab::Shortcut || !self.shortcut_focus.is_focused(window) {
+        if self.tab != ActionTab::Shortcut
+            || self.shortcut_manual
+            || !self.shortcut_focus.is_focused(window)
+        {
             return;
         }
         cx.stop_propagation();
@@ -247,7 +273,10 @@ impl CodexMicro {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.tab != ActionTab::Shortcut || !self.shortcut_focus.is_focused(window) {
+        if self.tab != ActionTab::Shortcut
+            || self.shortcut_manual
+            || !self.shortcut_focus.is_focused(window)
+        {
             return;
         }
         let captured = self.shortcut_capture.modifiers_changed(event.modifiers);

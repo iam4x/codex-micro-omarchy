@@ -136,6 +136,10 @@ You can bind single keys such as Esc, Tab, and F5, or combinations such as
 Ctrl+Shift+C and Super+Return. While recording, Ctrl+S becomes a shortcut
 instead of saving the editor. Modifier keys alone do not form a shortcut.
 
+If a combination triggers a desktop action before recording finishes, enable
+Type shortcut and enter its name, such as `Super+Left`. You can also paste a
+shortcut in this mode. Turn off Type shortcut to record with the keyboard again.
+
 Click the cross on the right to clear the field and record another shortcut.
 Click Assign action to assign the completed value. Remove binding deletes an
 existing assignment.
@@ -351,6 +355,8 @@ cargo run --locked --example verify-native
 
 To check only profile creation, activation, and persistence, run
 `cargo run --locked --example verify-native -- --profiles`.
+To check shortcut recording and manual entry, run
+`cargo run --locked --example verify-native -- --shortcuts`.
 To check joystick direction bindings, persistence, and removal, run
 `cargo run --locked --example verify-native -- --joystick`.
 

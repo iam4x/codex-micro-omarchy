@@ -113,6 +113,11 @@ impl CodexMicro {
                     "Enter an application name or an executable path. Arguments and quoted paths are supported.",
                     "firefox",
                 ),
+                ActionTab::Shortcut if self.shortcut_manual => (
+                    "KEYBOARD SHORTCUT",
+                    "Type a shortcut such as Super+Left. Use this for shortcuts that your desktop intercepts.",
+                    "Super+Left",
+                ),
                 ActionTab::Shortcut => (
                     "KEYBOARD SHORTCUT",
                     "Press your shortcut in the field. Release all keys to capture it, including Esc. Use × to clear.",
@@ -130,7 +135,7 @@ impl CodexMicro {
                 ),
                 ActionTab::System | ActionTab::Ai => unreachable!(),
             };
-            let input = if self.tab == ActionTab::Shortcut {
+            let input = if self.tab == ActionTab::Shortcut && !self.shortcut_manual {
                 let focused = self.shortcut_focus.is_focused(window);
                 let value = self
                     .shortcut_capture
@@ -203,10 +208,27 @@ impl CodexMicro {
                     .w_full()
                     .flex_shrink_0()
                     .flex()
-                    .child(Input::new(&self.input).flex_1().min_w_0())
+                    .child(
+                        Input::new(&self.input)
+                            .cleanable(self.tab == ActionTab::Shortcut)
+                            .flex_1()
+                            .min_w_0(),
+                    )
                     .into_any_element()
             };
-            action_form = action_form.child(self.label(label)).child(input);
+            action_form = action_form.child(self.label(label));
+            if self.tab == ActionTab::Shortcut {
+                action_form = action_form.child(
+                    Switch::new("shortcut-manual")
+                        .small()
+                        .checked(self.shortcut_manual)
+                        .label("Type shortcut")
+                        .on_click(cx.listener(|this, manual, window, cx| {
+                            this.set_shortcut_manual(*manual, window, cx);
+                        })),
+                );
+            }
+            action_form = action_form.child(input);
             if self.tab == ActionTab::Text {
                 action_form = action_form.child(
                     div().mt_2().child(
