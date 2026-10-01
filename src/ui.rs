@@ -1,3 +1,4 @@
+mod ai;
 mod bindings;
 mod control;
 mod device_view;
@@ -40,6 +41,9 @@ pub(super) struct CodexMicro {
     input: Entity<InputState>,
     text_input: Entity<InputState>,
     text_submit: bool,
+    ai_prompt: Entity<InputState>,
+    ai_state: ai::AiState,
+    ai_revision: u64,
     action_scroll: ScrollHandle,
     action_search: Entity<InputState>,
     status: DeviceStatus,
@@ -76,6 +80,23 @@ impl CodexMicro {
                 cx.notify();
             }
         });
+        let ai_prompt = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("For example: Focus T3 Code, or launch it if it is closed…")
+                .multi_line(true)
+                .rows(5)
+                .soft_wrap(true)
+        });
+        let ai_subscription = cx.subscribe(&ai_prompt, |this, _, event, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.ai_prompt_changed(cx);
+            }
+        });
+        let ai_quit_subscription = cx.on_app_quit(|this, _| {
+            this.invalidate_ai();
+            async {}
+        });
+        let ai_release_subscription = cx.on_release(|this, _| this.invalidate_ai());
         let action_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search actions…"));
         let search_subscription = cx.subscribe(&action_search, |this, _, event, cx| {
             if matches!(event, InputEvent::Change) {
@@ -137,6 +158,9 @@ impl CodexMicro {
             input,
             text_input,
             text_submit: false,
+            ai_prompt,
+            ai_state: ai::AiState::Idle,
+            ai_revision: 0,
             action_scroll: ScrollHandle::new(),
             action_search,
             status: DeviceStatus::Connecting,
@@ -153,6 +177,9 @@ impl CodexMicro {
                 subscription,
                 profile_subscription,
                 text_subscription,
+                ai_subscription,
+                ai_quit_subscription,
+                ai_release_subscription,
                 search_subscription,
                 blur_subscription,
                 activation_subscription,

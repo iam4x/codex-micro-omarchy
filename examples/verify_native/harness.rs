@@ -34,6 +34,11 @@ pub struct Snapshot {
     pub profile_dialog: bool,
     pub profile_name: String,
     pub profile_error: Option<String>,
+    pub ai_status: String,
+    pub ai_summary: String,
+    pub ai_script: String,
+    pub message: String,
+    pub message_error: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,7 +142,26 @@ impl NativeApp {
             "#81a1c1".into()
         };
         let log = fs::File::create(artifacts.join("native-session.log"))?;
-        let child = Command::new(&binary)
+        let mut command = Command::new(&binary);
+        if env::var_os("CODEX_MICRO_VERIFY_REAL_AI").is_none() {
+            let fixture = temporary.path().join("codex-fixture");
+            let marker = temporary.path().join("ai-result.txt");
+            let response = json!({"summary": "Write AI marker", "script": format!("printf ai-verified > {}", shell_words::quote(&marker.to_string_lossy()))}).to_string();
+            let source = format!(
+                "#!/bin/sh\nset -eu\nprintf 'called\\n' >> {}\nprintf '%s' \"$$\" > {}\nprompt=$(cat)\nwhile [ \"$#\" -gt 0 ]; do\n case \"$1\" in -o) result=$2; shift;; esac\n shift\ndone\ncase \"$prompt\" in *AI_FIXTURE_WINDOW_CLOSE*) sleep 30 & printf '%s' \"$!\" > {}; wait;; *AI_FIXTURE_DELAY*) sleep 2;; *AI_FIXTURE_FAIL*) echo 'fixture generation failed' >&2; exit 8;; esac\nprintf '%s' {} > \"$result\"\n",
+                shell_words::quote(&temporary.path().join("ai-calls").to_string_lossy()),
+                shell_words::quote(&temporary.path().join("ai-leader.pid").to_string_lossy()),
+                shell_words::quote(&temporary.path().join("ai-child.pid").to_string_lossy()),
+                shell_words::quote(&response),
+            );
+            fs::write(&fixture, source)?;
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&fixture, fs::Permissions::from_mode(0o700))?;
+            command.env("CODEX_MICRO_CODEX", fixture);
+        } else {
+            command.env_remove("CODEX_MICRO_CODEX");
+        }
+        let child = command
             .env("XDG_CONFIG_HOME", temporary.path())
             .env("CODEX_MICRO_CONTROL_SOCKET", &endpoint)
             .stdout(Stdio::from(log.try_clone()?))
@@ -235,7 +259,8 @@ impl NativeApp {
             monitor.scale.is_finite() && monitor.scale > 0.,
             "Invalid monitor scale"
         );
-        let x = monitor.x + ((f64::from(monitor.width) / monitor.scale - 1240.) / 2.) as i32;
+        let x = monitor.x
+            + ((f64::from(monitor.width) / monitor.scale - 1240.) / 2.).clamp(0., 24.) as i32;
         let y = monitor.y + ((f64::from(monitor.height) / monitor.scale - 860.) / 2.) as i32;
         let selector = format!("address:{}", client.address);
         for command in [
@@ -337,6 +362,9 @@ impl NativeApp {
     }
 
     pub fn screenshot(&self, name: &str) -> Result<()> {
+        if env::args().any(|argument| argument == "--ai-only") {
+            return Ok(());
+        }
         self.focus()?;
         thread::sleep(Duration::from_millis(150));
         let client = self.window()?;
@@ -404,6 +432,38 @@ impl NativeApp {
 
     pub fn marker(&self) -> PathBuf {
         self.temporary.path().join("result.txt")
+    }
+    pub fn ai_marker(&self) -> PathBuf {
+        self.temporary.path().join("ai-result.txt")
+    }
+    pub fn ai_calls(&self) -> Result<usize> {
+        match fs::read_to_string(self.temporary.path().join("ai-calls")) {
+            Ok(source) => Ok(source.lines().count()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
+            Err(error) => Err(error.into()),
+        }
+    }
+    pub fn ai_pids(&self) -> Result<Option<(i32, i32)>> {
+        let child = self.temporary.path().join("ai-child.pid");
+        if !child.exists() {
+            return Ok(None);
+        }
+        Ok(Some((
+            fs::read_to_string(self.temporary.path().join("ai-leader.pid"))?.parse()?,
+            fs::read_to_string(child)?.parse()?,
+        )))
+    }
+    pub fn close(&mut self) -> Result<()> {
+        let selector = format!("address:{}", self.window()?.address);
+        run(
+            "hyprctl",
+            &[
+                "dispatch",
+                &format!("hl.dsp.window.close({{window={selector:?}}})"),
+            ],
+        )?;
+        wait_until(|| Ok(self.child.try_wait()?.is_some()))
+            .context("Gracefully close temporary GPUI window")
     }
 }
 

@@ -1,3 +1,4 @@
+mod ai;
 mod harness;
 #[path = "../../src/wire.rs"]
 mod wire;
@@ -9,21 +10,27 @@ use std::{fs, thread, time::Duration};
 
 fn main() -> Result<()> {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
-    let profiles_only = match arguments.as_slice() {
-        [] => false,
-        [flag] if flag == "--profiles" => true,
-        _ => anyhow::bail!("Usage: verify-native [--profiles]"),
+    let mode = match arguments.as_slice() {
+        [] => "all",
+        [flag] if flag == "--profiles" => "profiles",
+        [flag] if flag == "--ai-only" => "ai",
+        _ => anyhow::bail!("Usage: verify-native [--profiles | --ai-only]"),
     };
     let mut app = NativeApp::start()?;
-    let result = if profiles_only {
-        check_profiles(&mut app)
-    } else {
-        verify(&mut app)
+    let result = match mode {
+        "profiles" => check_profiles(&mut app),
+        "ai" => ai::check(&app),
+        _ => verify(&mut app),
     };
     if result.is_err() {
         let _ = app.screenshot("native-failure");
     }
-    result
+    result?;
+    drop(app);
+    if mode != "profiles" && std::env::var_os("CODEX_MICRO_VERIFY_REAL_AI").is_none() {
+        ai::check_window_close()?;
+    }
+    Ok(())
 }
 
 fn verify(app: &mut NativeApp) -> Result<()> {
@@ -47,6 +54,7 @@ fn verify(app: &mut NativeApp) -> Result<()> {
     check_phases(app).context("Press/release switching")?;
     check_shortcuts(app).context("Shortcut recording")?;
     check_execution(app).context("Service execution")?;
+    ai::check(app).context("AI generated bindings")?;
     check_reset(app).context("Reset, undo, and removal")?;
     for preset in [
         "play_pause",

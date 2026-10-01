@@ -279,6 +279,9 @@ impl Render for CodexMicro {
                             ))
                             .child(
                                 div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
                                     .text_size(px(11.))
                                     .text_color(rgb(if self.message_error {
                                         p.red
@@ -287,7 +290,6 @@ impl Render for CodexMicro {
                                     }))
                                     .child(self.message.clone()),
                             )
-                            .child(div().flex_1())
                             .child(self.label("Bindings stay active when closed")),
                     ),
             )

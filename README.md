@@ -1,8 +1,9 @@
 # codex-micro-omarchy
 
 Codex Micro maps your buttons and dial to apps, shortcuts, text, commands,
-and Omarchy actions. Its native Rust and GPUI editor uses your desktop colors,
-and a background service keeps bindings active after you close the window.
+AI-generated automations, and Omarchy actions. Its native Rust and GPUI editor
+uses your desktop colors, and a background service keeps bindings active after
+you close the window.
 
 ![Codex Micro showing numbered buttons, dial controls, and the action editor](docs/screenshots/overview.png)
 
@@ -78,11 +79,12 @@ joystick binding is not implemented.
 
 1. Click a control, or click Identify key and press the physical control.
 2. Choose On press or On release. Dial rotation uses On turn for each step.
-3. Choose System, App, Shortcut, Text, or Command and fill in the action.
-4. Click Save binding. Ctrl+S also saves unless the shortcut field is focused.
+3. Choose System, App, Shortcut, Text, Command, or AI and fill in the action.
+4. Click Assign action, or Save changes for an existing binding. Ctrl+S also
+   saves unless the shortcut field is focused.
 
 Switching between On press and On release keeps the entire form, including
-the text submit toggle. Save binding writes that form to the selected event.
+the text submit toggle. Saving writes that form to the selected event.
 The service reloads saved bindings automatically.
 
 Test action runs the current form without saving it. Shortcut and text actions
@@ -133,7 +135,7 @@ Ctrl+Shift+C and Super+Return. While recording, Ctrl+S becomes a shortcut
 instead of saving the editor. Modifier keys alone do not form a shortcut.
 
 Click the cross on the right to clear the field and record another shortcut.
-Click Save binding to assign the completed value. Remove binding deletes an
+Click Assign action to assign the completed value. Remove binding deletes an
 existing assignment.
 
 ![Recorded shortcut with a cross button to clear the field](docs/screenshots/shortcut.png)
@@ -164,6 +166,45 @@ printf '%s\n' "$(date)" >> "$HOME/micro-notes.txt"
 
 Live activity shows device events and action results. If a command cannot
 start or exits with an error, the app reports it there.
+
+### Create an action with AI
+
+Choose AI to describe the behavior you want. For example:
+
+> Focus an existing T3 Code instance. If it is not running, start one.
+
+1. Select the button or dial event and open AI.
+2. Write your request, then select Generate action.
+3. Read the explanation and generated script. Cancel stops a pending generation.
+4. Select Assign action, or Save changes for an existing binding.
+   Test action runs the generated script.
+
+![AI action for focusing or launching T3 Code](docs/screenshots/ai.png)
+
+Generation uses your local Codex CLI and its saved login. Install Codex and
+run `codex login` before generating an action. The CLI must be on the app's
+`PATH`. Other action types and saved AI scripts work without Codex.
+
+The requested `sol-6.1-medium-fast` preset maps to the CLI model
+`gpt-6.1-sol`, medium reasoning, and the priority service tier, called Fast
+in Codex. Generation does not retry with another model when a request fails.
+
+The app supplies installed application launchers and window classes so Codex
+can choose commands for your desktop. It runs generation in a read-only
+workspace and validates the result without executing it. The prompt,
+explanation, and script are saved together in the binding. A device press
+runs that saved script directly, without another AI request.
+
+Editing the prompt invalidates its generated script. Changing the selected
+control or action type cancels a pending request. Switching between press and
+release keeps the form so you can save it for either event.
+
+The bundled [Codex Micro skill](skills/codex-micro/SKILL.md) explains control
+IDs, events, script execution, and Omarchy conventions. It is embedded in the
+app and discoverable by Codex in this repository through `.agents/skills`.
+The installer also places a readable copy under
+`~/.local/share/codex-micro/skills/codex-micro/SKILL.md`.
+Run `codex-micro --print-ai-skill` to print the embedded guide.
 
 ### Remove, reset, and undo
 
@@ -288,8 +329,8 @@ cargo test --locked
 ```
 
 The unit tests cover HID framing, button switch handling, shortcut recording,
-socket requests, configuration reloads, and atomic saves. They do not require
-a connected Micro.
+socket requests, configuration reloads, atomic saves, AI output validation,
+and generation process cleanup. They do not require a connected Micro.
 
 For a native UI check, install the current build and run this in your Omarchy
 session. The Rust verifier needs `grim` and ImageMagick:
@@ -316,6 +357,21 @@ Set `CODEX_MICRO_BINARY` to check another build of the app. The verifier uses
 the installed binary by default, and text submission checks run through the
 installed service.
 
+The native check uses a controlled Codex fixture by default. It checks AI
+generation, saved-script execution, errors, stale results, cancellation, and
+window-close cleanup without model requests. To check the installed Codex CLI
+through the app as well, sign in with `codex login` and run:
+
+```sh
+CODEX_MICRO_VERIFY_REAL_AI=1 cargo run --locked --example verify-native
+```
+
+The real check generates a script that writes a marker into its temporary
+directory, saves it in the temporary profile, and runs it through the service.
+Append `-- --ai-only` to either native check command to test only AI actions
+and process cleanup. This mode skips screenshots and text delivery to the
+focused desktop application.
+
 To check text delivery against a chat-style input, run:
 
 ```sh
@@ -336,6 +392,7 @@ allows access only to the current user. Documentation screenshots live in
 | Path | What lives there |
 | --- | --- |
 | `src/ui/` | Device view, editors, shortcut recording, native automation |
+| `src/ai.rs` | Local Codex generation and output validation |
 | `src/model.rs` | Controls, actions, validation, saved profiles |
 | `src/protocol.rs` | HID reports and device input decoding |
 | `src/daemon.rs`, `src/daemon/` | Device connection, action execution, IPC, config reloads |

@@ -956,6 +956,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "hidapi",
+ "libc",
  "serde",
  "serde_json",
  "shell-words",
