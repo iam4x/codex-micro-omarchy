@@ -832,11 +832,24 @@ fn check_lighting(app: &mut NativeApp) -> Result<()> {
 fn check_slider_release(app: &NativeApp, speed: bool, field: &str) -> Result<()> {
     let original = fs::read_to_string(&app.config)?;
     let start = app.inspect()?.lighting["ambient"][field].clone();
-    for value in [65, 70, 80, 90] {
+    for (value, expected) in [
+        (0, 0),
+        (4, 0),
+        (5, 10),
+        (64, 60),
+        (65, 70),
+        (96, 100),
+        (100, 100),
+        (89, 90),
+    ] {
         app.ui(json!({"action":"lighting_slider","speed":speed,"value":value}))?;
         ensure!(
             fs::read_to_string(&app.config)? == original,
             "Slider saved before release"
+        );
+        ensure!(
+            app.inspect()?.lighting["ambient"][field] == expected,
+            "Slider did not snap {value} to {expected}"
         );
     }
     ensure!(
