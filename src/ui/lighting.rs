@@ -10,6 +10,7 @@ use gpui::{
 use gpui_component::{
     color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState},
     slider::{Slider, SliderEvent, SliderState},
+    switch::Switch,
 };
 
 pub(super) struct LightingEditor {
@@ -140,6 +141,12 @@ impl CodexMicro {
         });
         cx.notify();
     }
+    pub(super) fn set_reactive(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if let Some(target @ 0..=5) = self.lighting.target {
+            self.lighting.settings.reactive[target] = enabled;
+            self.apply_lighting(cx);
+        }
+    }
     pub(super) fn apply_lighting(&mut self, cx: &mut Context<Self>) {
         let mut updated = self.profiles.clone();
         updated.active_mut().lighting = self.lighting.settings.clone();
@@ -255,6 +262,7 @@ impl CodexMicro {
             return panel.child(self.label("Select a key or lighting zone to customize it."));
         };
         let light = self.lighting.settings.light(target);
+        let reactive = target < 6 && self.lighting.settings.reactive[target];
         let mut effects = div().flex().flex_wrap().gap_2();
         for effect in Effect::ALL {
             if target < 6 && matches!(effect, Effect::Snake | Effect::Gradient) {
@@ -288,14 +296,29 @@ impl CodexMicro {
             );
         }
         panel
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .child(self.label("EFFECT"))
-                    .child(effects),
-            )
+            .when(target < 6, |panel| {
+                panel.child(
+                    Switch::new("lighting-reactive")
+                        .label("Reactive: light on press")
+                        .checked(reactive)
+                        .on_click(
+                            cx.listener(|this, enabled, _, cx| this.set_reactive(*enabled, cx)),
+                        ),
+                )
+            })
+            .when(reactive, |panel| {
+                panel.child(self.label("Flashes your chosen color for 0.4 seconds after a press."))
+            })
+            .when(!reactive, |panel| {
+                panel.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(self.label("EFFECT"))
+                        .child(effects),
+                )
+            })
             .child(
                 div()
                     .flex()
@@ -303,18 +326,18 @@ impl CodexMicro {
                     .gap_4()
                     .child(self.label("COLOR"))
                     .when(
-                        !matches!(light.effect, Effect::Off | Effect::Rainbow),
+                        reactive || !matches!(light.effect, Effect::Off | Effect::Rainbow),
                         |row| {
                             row.child(ColorPicker::new(&self.lighting.color))
                                 .child(self.label(format!("#{:06X}", light.color)))
                         },
                     )
                     .when(
-                        matches!(light.effect, Effect::Off | Effect::Rainbow),
+                        !reactive && matches!(light.effect, Effect::Off | Effect::Rainbow),
                         |row| row.child(self.label(format!("#{:06X}", light.color))),
                     ),
             )
-            .when(light.effect != Effect::Off, |panel| {
+            .when(reactive || light.effect != Effect::Off, |panel| {
                 panel.child(
                     div()
                         .flex()
@@ -324,7 +347,7 @@ impl CodexMicro {
                         .child(self.lighting_slider(&self.lighting.brightness)),
                 )
             })
-            .when(light.effect.animated(), |panel| {
+            .when(!reactive && light.effect.animated(), |panel| {
                 panel.child(
                     div()
                         .flex()

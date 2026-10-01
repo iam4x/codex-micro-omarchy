@@ -87,11 +87,18 @@ effects. Existing profiles without lighting settings use solid `#81A1C1` at
 40% brightness. Choose **Off** for a target to turn its LEDs off. Lighting edits
 preserve unsaved binding edits.
 
+For Key 01 through Key 06, enable **Reactive: light on press** to keep the LED
+dark until pressed, then flash the selected color and brightness for 0.4 seconds.
+Repeated presses extend the flash. Disable Reactive to restore the saved effect.
+The background service handles the flash while the settings window is closed.
+
+![Reactive lighting toggle, color picker, and brightness control](docs/screenshots/lighting-reactive.png)
+
 The service applies saved lighting on the Codex device layer, layer index 1,
 and restores it after reconnecting, even when the editor is closed. It does
 not write lighting to device flash. Other device layers retain their own
 lighting. The footer reports **Lighting applied to your Micro** after firmware
-acknowledges both lighting commands, or displays a firmware error.
+acknowledges the lighting update, or displays a firmware error.
 
 | Target | Controls |
 | --- | --- |

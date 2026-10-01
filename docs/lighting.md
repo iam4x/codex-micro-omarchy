@@ -10,6 +10,9 @@ colors above `0xFFFFFF` and brightness or speed above 100 before replacing the
 saved file. The six-element `agents` array fixes the number of individual LEDs.
 
 ```toml
+[profiles.lighting]
+reactive = [true, false, false, false, false, false]
+
 [profiles.lighting.keys]
 color = 16744192 # #FF8000
 brightness = 40
@@ -29,19 +32,31 @@ speed. Effect names in TOML are `off`, `solid`, `snake`, `rainbow`, `breath`,
 `gradient`, and `shallow_breath`. The editor hides Snake and Gradient for individual
 keys because those effects require a zone with multiple LEDs.
 
+The six-element `reactive` array defaults to all false and applies only to the
+individual keys. A reactive LED stays off until a press triggers a solid flash
+using its saved color and brightness. The service turns it off after 400 ms;
+repeated presses extend that deadline, and release events do not end the flash.
+Transient flash state is kept in memory, so key presses do not write configuration
+or device flash. Profile setting changes, layer changes, and reconnects clear it.
+
 The service owns the HID connection and writes both commands in its device
 loop. The config watcher never writes to HID. A new connection starts with
 unknown layer state; lighting waits for a successful `device.status` response.
 The service sends lighting only on layer index 1. It polls status every three
 seconds, so a physical layer change can take that long to be observed.
 
-The service sends `v.oai.rgbcfg` with `keys` and `ambient`, then
+On connection, the service sends `v.oai.rgbcfg` with `keys` and `ambient`, then
 `v.oai.thstatus` with all six Agent entries. Both commands use unique request
 IDs, separate from the status request ID. Brightness and speed convert from
 integer percentages to normalized numbers. The numeric effect codes are 0
 through 6 in the order listed above. Color is a packed `0xRRGGBB` integer.
 Zone entries set `m` to 0; Agent entries set `sk` and `sa` to 0 so Agent effects
 do not replace the other zones.
+
+Subsequent updates send only changed zones or individual LEDs. The service
+waits for acknowledgement of the current batch before sending another batch.
+Reactive flashes send a single Agent entry on and another off, without updating
+the Command keys or border.
 
 The service resends after a saved setting changes, after returning to the
 Codex layer, and after reconnecting. Unchanged settings send no new frames.

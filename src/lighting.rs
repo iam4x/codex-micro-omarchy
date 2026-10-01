@@ -1,6 +1,11 @@
+use crate::{
+    model::{Control, Phase},
+    protocol::Input,
+};
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -89,6 +94,7 @@ impl Light {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Lighting {
+    pub reactive: [bool; 6],
     pub agents: [Light; 6],
     pub keys: Light,
     pub ambient: Light,
@@ -147,19 +153,83 @@ impl Lighting {
 // A new instance per connection forces saved lighting to be replayed after reconnect.
 #[derive(Default)]
 pub struct Sync {
+    configured: Option<Lighting>,
     applied: Option<Lighting>,
+    flashes: [Option<Instant>; 6],
 }
 impl Sync {
+    pub fn input(&mut self, input: &Input, now: Instant) {
+        if input.phase != Phase::Press {
+            return;
+        }
+        let index = match input.control {
+            Control::AG00 => 0,
+            Control::AG01 => 1,
+            Control::AG02 => 2,
+            Control::AG03 => 3,
+            Control::AG04 => 4,
+            Control::AG05 => 5,
+            _ => return,
+        };
+        if self
+            .configured
+            .as_ref()
+            .is_some_and(|settings| settings.reactive[index])
+        {
+            self.flashes[index] = Some(now + Duration::from_millis(400));
+        }
+    }
     pub fn update(&mut self, layer: Option<u64>, lighting: &Lighting, id: &mut u64) -> Vec<Value> {
+        self.update_at(layer, lighting, Instant::now(), id)
+    }
+    fn update_at(
+        &mut self,
+        layer: Option<u64>,
+        lighting: &Lighting,
+        now: Instant,
+        id: &mut u64,
+    ) -> Vec<Value> {
         if layer != Some(1) {
-            self.applied = None;
+            *self = Self::default();
             return Vec::new();
         }
-        if self.applied.as_ref() == Some(lighting) {
+        if self.configured.as_ref() != Some(lighting) {
+            self.configured = Some(lighting.clone());
+            self.flashes = [None; 6];
+        }
+        let mut effective = lighting.clone();
+        for (index, light) in effective.agents.iter_mut().enumerate() {
+            if lighting.reactive[index] {
+                light.effect = if self.flashes[index].is_some_and(|until| until > now) {
+                    Effect::Solid
+                } else {
+                    Effect::Off
+                };
+            }
+        }
+        if self.applied.as_ref() == Some(&effective) {
             return Vec::new();
         }
-        self.applied = Some(lighting.clone());
-        lighting.requests(id).into()
+        let [zones, mut agents] = effective.requests(id);
+        let mut requests = Vec::new();
+        if self
+            .applied
+            .as_ref()
+            .is_none_or(|old| old.keys != effective.keys || old.ambient != effective.ambient)
+        {
+            requests.push(zones);
+        }
+        if let Some(old) = &self.applied {
+            agents["params"].as_array_mut().unwrap().retain(|entry| {
+                let index = entry["id"].as_u64().unwrap() as usize;
+                old.agents[index] != effective.agents[index]
+            });
+        }
+        if !agents["params"].as_array().unwrap().is_empty() {
+            requests.push(agents);
+        }
+        self.applied = Some(effective);
+        requests
     }
 }
 
@@ -214,10 +284,134 @@ mod tests {
         assert_eq!(sync.update(Some(1), &lighting, &mut id).len(), 2);
         assert!(sync.update(Some(1), &lighting, &mut id).is_empty());
         lighting.agents[0].color = 0;
-        assert_eq!(sync.update(Some(1), &lighting, &mut id).len(), 2);
+        assert_eq!(sync.update(Some(1), &lighting, &mut id).len(), 1);
         assert!(sync.update(Some(0), &lighting, &mut id).is_empty());
         assert_eq!(sync.update(Some(1), &lighting, &mut id).len(), 2);
         assert_eq!(Sync::default().update(Some(1), &lighting, &mut id).len(), 2);
+    }
+    #[test]
+    fn reactive_flashes_only_changed_keys_and_repeated_presses_extend_the_timer() {
+        let now = Instant::now();
+        let mut sync = Sync::default();
+        let mut id = 0;
+        let mut lighting = Lighting::default();
+        lighting.reactive[0] = true;
+        lighting.reactive[1] = true;
+        let initial = sync.update_at(Some(1), &lighting, now, &mut id);
+        assert_eq!(initial.len(), 2);
+        assert_eq!(initial[1]["params"][0]["e"], 0);
+        assert_eq!(initial[1]["params"][2]["e"], 1);
+        let press = Input {
+            control: Control::AG00,
+            phase: Phase::Press,
+        };
+        sync.input(&press, now);
+        let on = sync.update_at(Some(1), &lighting, now, &mut id);
+        assert_eq!(on.len(), 1);
+        assert_eq!(on[0]["method"], "v.oai.thstatus");
+        assert_eq!(on[0]["params"].as_array().unwrap().len(), 1);
+        assert_eq!(on[0]["params"][0]["id"], 0);
+        assert_eq!(on[0]["params"][0]["e"], 1);
+        assert_eq!(on[0]["params"][0]["c"], lighting.agents[0].color);
+        assert_eq!(on[0]["params"][0]["b"], 0.4);
+        sync.input(&press, now + Duration::from_millis(300));
+        sync.input(
+            &Input {
+                control: Control::AG00,
+                phase: Phase::Release,
+            },
+            now + Duration::from_millis(600),
+        );
+        sync.input(
+            &Input {
+                control: Control::AG02,
+                phase: Phase::Press,
+            },
+            now,
+        );
+        sync.input(
+            &Input {
+                control: Control::Mic,
+                phase: Phase::Press,
+            },
+            now,
+        );
+        assert!(
+            sync.update_at(
+                Some(1),
+                &lighting,
+                now + Duration::from_millis(600),
+                &mut id
+            )
+            .is_empty()
+        );
+        sync.input(
+            &Input {
+                control: Control::AG01,
+                phase: Phase::Press,
+            },
+            now + Duration::from_millis(600),
+        );
+        let second = sync.update_at(
+            Some(1),
+            &lighting,
+            now + Duration::from_millis(600),
+            &mut id,
+        );
+        assert_eq!(second[0]["params"][0]["id"], 1);
+        let off = sync.update_at(
+            Some(1),
+            &lighting,
+            now + Duration::from_millis(700),
+            &mut id,
+        );
+        assert_eq!(off[0]["params"].as_array().unwrap().len(), 1);
+        assert_eq!(off[0]["params"][0]["id"], 0);
+        assert_eq!(off[0]["params"][0]["e"], 0);
+        let off = sync.update_at(
+            Some(1),
+            &lighting,
+            now + Duration::from_millis(1000),
+            &mut id,
+        );
+        assert_eq!(off[0]["params"][0]["id"], 1);
+        assert_eq!(off[0]["params"][0]["e"], 0);
+        assert!(
+            sync.update_at(Some(1), &lighting, now + Duration::from_secs(2), &mut id)
+                .is_empty()
+        );
+    }
+    #[test]
+    fn reactive_resets_on_settings_changes_layer_changes_and_reconnection() {
+        let now = Instant::now();
+        let mut sync = Sync::default();
+        let mut id = 0;
+        let mut lighting = Lighting::default();
+        lighting.reactive[0] = true;
+        let press = Input {
+            control: Control::AG00,
+            phase: Phase::Press,
+        };
+        sync.update_at(Some(1), &lighting, now, &mut id);
+        sync.input(&press, now);
+        sync.update_at(Some(1), &lighting, now, &mut id);
+        lighting.agents[0].color = 0xff6600;
+        let changed = sync.update_at(Some(1), &lighting, now, &mut id);
+        assert_eq!(changed[0]["params"][0]["e"], 0);
+        sync.input(&press, now);
+        sync.update_at(Some(1), &lighting, now, &mut id);
+        assert!(sync.update_at(Some(2), &lighting, now, &mut id).is_empty());
+        sync.input(&press, now);
+        let restored = sync.update_at(Some(1), &lighting, now, &mut id);
+        assert_eq!(restored[1]["params"][0]["e"], 0);
+        assert_eq!(
+            Sync::default().update_at(Some(1), &lighting, now, &mut id)[1]["params"][0]["e"],
+            0
+        );
+        lighting.reactive[0] = false;
+        let disabled = sync.update_at(Some(1), &lighting, now, &mut id);
+        assert_eq!(disabled[0]["params"][0]["e"], 1);
+        assert_eq!(disabled[0]["params"][0]["c"], 0xff6600);
     }
     #[test]
     fn legacy_profiles_have_default_lighting_and_invalid_changes_cannot_replace_saved_config() {

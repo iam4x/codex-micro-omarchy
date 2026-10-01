@@ -824,8 +824,45 @@ fn check_lighting(app: &mut NativeApp) -> Result<()> {
         lighting["ambient"]["effect"] == "solid",
         "Solid screenshot used wrong effect"
     );
+    ensure!(
+        !app.request(json!({"op":"ui","action":"lighting_reactive","enabled":true}))?
+            .ok,
+        "Reactive toggle accepted for Border"
+    );
+    app.ui(json!({"action":"lighting_target","target":0}))?;
+    let saved_effect = app.inspect()?.lighting["agents"][0]["effect"].clone();
+    app.ui(json!({"action":"lighting_reactive","enabled":true}))?;
+    check_saved_lighting(app)?;
+    ensure!(
+        app.inspect()?.lighting["reactive"] == json!([true, false, false, false, false, false]),
+        "Reactive toggle changed another key"
+    );
+    app.screenshot("native-lighting-reactive")?;
+    app.ui(json!({"action":"activate_profile","index":1}))?;
+    ensure!(
+        app.inspect()?.lighting["reactive"] == json!([false, false, false, false, false, false]),
+        "Reactive settings leaked into another profile"
+    );
+    app.ui(json!({"action":"activate_profile","index":0}))?;
+    ensure!(
+        app.inspect()?.lighting["reactive"][0] == true,
+        "Switching profiles lost Reactive settings"
+    );
+    app.restart()?;
+    ensure!(
+        app.inspect()?.lighting["reactive"][0] == true,
+        "Reactive toggle did not reload"
+    );
+    app.ui(json!({"action":"lighting_page","open":true}))?;
+    app.ui(json!({"action":"lighting_target","target":0}))?;
+    app.ui(json!({"action":"lighting_reactive","enabled":false}))?;
+    check_saved_lighting(app)?;
+    ensure!(
+        app.inspect()?.lighting["agents"][0]["effect"] == saved_effect,
+        "Disabling Reactive changed the saved effect"
+    );
     println!(
-        "PASS: lighting saves sliders on release, applies colors and effects immediately, starts without a selection, and preserves profiles and bindings"
+        "PASS: lighting saves sliders on release, persists per-key Reactive toggles across profiles and restarts, and preserves binding edits"
     );
     Ok(())
 }

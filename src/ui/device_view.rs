@@ -18,7 +18,11 @@ impl CodexMicro {
             _ => 6,
         };
         let light = self.lighting.settings.light(target);
-        let light_color = if light.effect != crate::lighting::Effect::Off && light.brightness > 0 {
+        let active = self.active.is_some_and(|(key, _)| key == control);
+        let reactive = target < 6 && self.lighting.settings.reactive[target];
+        let light_color = if light.brightness > 0
+            && ((reactive && active) || (!reactive && light.effect != crate::lighting::Effect::Off))
+        {
             light.color
         } else {
             p.border
@@ -28,7 +32,6 @@ impl CodexMicro {
         } else {
             self.selected == control
         };
-        let active = self.active.is_some_and(|(key, _)| key == control);
         let action = self
             .profiles
             .active()

@@ -64,6 +64,7 @@ pub enum UiAction {
     LightingValue { light: crate::lighting::Light },
     LightingSlider { speed: bool, value: u8 },
     LightingSliderRelease,
+    LightingReactive { enabled: bool },
     GenerateAi,
     CancelAi,
 }
@@ -242,6 +243,13 @@ pub fn dispatch(
                 "Select a lighting target first"
             );
             view.slider_change(speed, value, cx);
+        }
+        UiAction::LightingReactive { enabled } => {
+            anyhow::ensure!(
+                view.lighting.target.is_some_and(|target| target < 6),
+                "Reactive lighting requires an individual key"
+            );
+            view.set_reactive(enabled, cx);
         }
         UiAction::LightingSliderRelease => view.finish_lighting_drag(cx),
         UiAction::GenerateAi => view.generate_ai(cx),
