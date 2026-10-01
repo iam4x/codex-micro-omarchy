@@ -20,30 +20,38 @@ impl CodexMicro {
     pub(super) fn editor(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let p = self.palette;
         let assigned = self.profiles.active().action(self.selected, self.phase);
-        let mut tabs = div().flex().gap_1().mb_5();
-        for tab in ActionTab::ALL {
-            let selected = self.tab == tab;
-            tabs = tabs.child(
-                div()
-                    .id(SharedString::from(format!("tab-{}", tab.name())))
-                    .flex_1()
-                    .py_2()
-                    .rounded(px(3.))
-                    .border_1()
-                    .border_color(rgb(if selected { p.accent } else { p.border }))
-                    .text_color(rgb(if selected { p.accent } else { p.muted }))
-                    .cursor_pointer()
-                    .hover(|style| style.bg(rgb(p.raised)))
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .items_center()
-                    .child(self.icon(tab.icon(), 16., if selected { p.accent } else { p.muted }))
-                    .child(div().text_size(px(10.)).child(tab.name()))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.switch_tab(tab, window, cx);
-                    })),
-            );
+        let mut tabs = div().flex().flex_col().gap_1().mb_5();
+        for row in ActionTab::ALL.chunks(3) {
+            let mut tab_row = div().flex().gap_1();
+            for &tab in row {
+                let selected = self.tab == tab;
+                tab_row = tab_row.child(
+                    div()
+                        .id(SharedString::from(format!("tab-{}", tab.name())))
+                        .flex_1()
+                        .py_2()
+                        .rounded(px(3.))
+                        .border_1()
+                        .border_color(rgb(if selected { p.accent } else { p.border }))
+                        .text_color(rgb(if selected { p.accent } else { p.muted }))
+                        .cursor_pointer()
+                        .hover(|style| style.bg(rgb(p.raised)))
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .items_center()
+                        .child(self.icon(
+                            tab.icon(),
+                            16.,
+                            if selected { p.accent } else { p.muted },
+                        ))
+                        .child(div().text_size(px(10.)).child(tab.name()))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.switch_tab(tab, window, cx);
+                        })),
+                );
+            }
+            tabs = tabs.child(tab_row);
         }
         let mut action_form = div().w_full().flex_shrink_0().flex().flex_col().gap_2();
         if self.tab == ActionTab::System {
