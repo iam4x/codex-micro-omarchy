@@ -27,6 +27,7 @@ pub struct Snapshot {
     pub scroll_y: f64,
     pub input: String,
     pub text_submit: bool,
+    pub text_bulk: bool,
     pub shortcut_manual: bool,
     pub shortcut_preview: Option<String>,
     pub shortcut_held: bool,

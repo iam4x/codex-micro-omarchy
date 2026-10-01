@@ -17,8 +17,9 @@ fn main() -> Result<()> {
         [flag] if flag == "--joystick" => "joystick",
         [flag] if flag == "--shortcuts" => "shortcuts",
         [flag] if flag == "--lighting" => "lighting",
+        [flag] if flag == "--text-settings" => "text-settings",
         _ => anyhow::bail!(
-            "Usage: verify-native [--profiles | --ai-only | --joystick | --shortcuts | --lighting]"
+            "Usage: verify-native [--profiles | --ai-only | --joystick | --shortcuts | --lighting | --text-settings]"
         ),
     };
     let mut app = NativeApp::start()?;
@@ -28,6 +29,7 @@ fn main() -> Result<()> {
         "joystick" => check_joystick(&mut app),
         "shortcuts" => check_shortcuts(&app),
         "lighting" => check_lighting(&mut app),
+        "text-settings" => check_text_settings(&app),
         _ => verify(&mut app),
     };
     if result.is_err() {
@@ -39,6 +41,7 @@ fn main() -> Result<()> {
         && mode != "joystick"
         && mode != "shortcuts"
         && mode != "lighting"
+        && mode != "text-settings"
         && std::env::var_os("CODEX_MICRO_VERIFY_REAL_AI").is_none()
     {
         ai::check_window_close()?;
@@ -326,7 +329,7 @@ fn check_forms(app: &NativeApp) -> Result<()> {
         (
             "text",
             "Hello from my Micro\nSecond line\n\nFinal line: café",
-            json!({"kind": "text", "text": "Hello from my Micro\nSecond line\n\nFinal line: café", "submit": true}),
+            json!({"kind": "text", "text": "Hello from my Micro\nSecond line\n\nFinal line: café", "submit": true, "bulk": false}),
         ),
         (
             "command",
@@ -376,7 +379,7 @@ fn check_forms(app: &NativeApp) -> Result<()> {
                 }
                 let state = app.inspect()?;
                 ensure!(
-                    state.input == value && !state.text_submit,
+                    state.input == value && !state.text_submit && !state.text_bulk,
                     "Textarea input or default submit state is wrong: {state:?}"
                 );
                 app.ui(json!({"action": "text_submit", "enabled": true}))?;
@@ -408,6 +411,23 @@ fn check_forms(app: &NativeApp) -> Result<()> {
         );
         ensure!(!app.inspect()?.dirty, "Saved {tab} form is still dirty");
         if tab == "text" {
+            app.ui(json!({"action": "text_bulk", "enabled": true}))?;
+            ensure!(
+                app.inspect()?.dirty,
+                "Bulk toggle did not mark the binding dirty"
+            );
+            app.ui(json!({"action": "save"}))?;
+            reload(app)?;
+            ensure!(
+                app.inspect()?.text_bulk && !app.inspect()?.dirty,
+                "Bulk mode did not reload cleanly"
+            );
+            ensure!(
+                app.binding("AG00", "press")?.unwrap()["bulk"] == true,
+                "Bulk mode did not save"
+            );
+            app.ui(json!({"action": "text_bulk", "enabled": false}))?;
+            app.ui(json!({"action": "save"}))?;
             reload(app)?;
             let state = app.inspect()?;
             ensure!(
@@ -460,6 +480,37 @@ fn check_text_delivery(app: &NativeApp, value: &str) -> Result<()> {
     println!(
         "PASS: textarea accepts Enter, blank lines, and Unicode; saved line breaks reload exactly"
     );
+    Ok(())
+}
+
+fn check_text_settings(app: &NativeApp) -> Result<()> {
+    app.ui(json!({"action": "select", "control": "AG00"}))?;
+    app.ui(json!({"action": "tab", "tab": "text"}))?;
+    app.ui(json!({"action": "focus_input"}))?;
+    app.type_text("Bulk paste settings: café")?;
+    ensure!(!app.inspect()?.text_bulk, "Bulk paste must default off");
+    for bulk in [true, false] {
+        for submit in [true, false] {
+            app.ui(json!({"action": "text_bulk", "enabled": bulk}))?;
+            app.ui(json!({"action": "text_submit", "enabled": submit}))?;
+            app.ui(json!({"action": "save"}))?;
+            reload(app)?;
+            let state = app.inspect()?;
+            ensure!(
+                state.text_bulk == bulk && state.text_submit == submit && !state.dirty,
+                "Text settings did not reload: {state:?}"
+            );
+            let action = app
+                .binding("AG00", "press")?
+                .context("Missing text binding")?;
+            ensure!(
+                action["bulk"] == bulk && action["submit"] == submit,
+                "Text settings did not save: {action}"
+            );
+        }
+    }
+    app.screenshot("native-text-settings")?;
+    println!("PASS: typing and bulk paste modes save and reload with both submit settings");
     Ok(())
 }
 

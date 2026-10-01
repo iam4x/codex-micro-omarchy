@@ -132,8 +132,12 @@ impl CodexMicro {
                     "Ctrl+Shift+C",
                 ),
                 ActionTab::Text => (
-                    "TEXT TO TYPE",
-                    "Press Enter for a new line. Line breaks are typed as Shift+Enter in the focused application. Supports Unicode.",
+                    "TEXT TO INSERT",
+                    if self.text_bulk {
+                        "Pastes using Shift+Insert without changing the normal clipboard. The app must map Shift+Insert to primary paste. On Hyprland, keep the pointer over the target app."
+                    } else {
+                        "Press Enter for a new line. Line breaks are typed as Shift+Enter in the focused application. Supports Unicode."
+                    },
                     "Your text here",
                 ),
                 ActionTab::Command => (
@@ -240,11 +244,24 @@ impl CodexMicro {
             if self.tab == ActionTab::Text {
                 action_form = action_form.child(
                     div().mt_2().child(
+                        Switch::new("text-bulk")
+                            .small()
+                            .checked(self.text_bulk)
+                            .label("Bulk paste")
+                            .tooltip("Paste with Shift+Insert using the primary selection. Leaves the normal clipboard untouched.")
+                            .on_click(cx.listener(|this, enabled, _, cx| {
+                                this.text_bulk = *enabled;
+                                cx.notify();
+                            })),
+                    ),
+                );
+                action_form = action_form.child(
+                    div().mt_2().child(
                         Switch::new("text-submit")
                             .small()
                             .checked(self.text_submit)
-                            .label("Submit after typing")
-                            .tooltip("Press Enter after the full text has been typed")
+                            .label("Submit after insertion")
+                            .tooltip("Wait 500 ms after inserting the text, then press Enter")
                             .on_click(cx.listener(|this, enabled, _, cx| {
                                 this.set_text_submit(*enabled, cx);
                             })),

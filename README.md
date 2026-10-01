@@ -12,13 +12,14 @@ lighting after you close the window.
 
 Run this on Omarchy in a graphical session. You need a current stable Rust
 toolchain and a working Vulkan graphics driver. Text actions use `wtype`.
+Bulk paste also uses `wl-copy` from `wl-clipboard` and `flock` from `util-linux`.
 
 Install the build tools and libraries on Arch:
 
 ```sh
 sudo pacman -S --needed base-devel rust clang pkgconf \
   fontconfig libxcb libxkbcommon libxkbcommon-x11 wayland \
-  vulkan-icd-loader wtype
+  vulkan-icd-loader wtype wl-clipboard
 ```
 
 If you already use Rustup, omit `rust` and keep your stable toolchain.
@@ -200,12 +201,25 @@ existing assignment.
 Choose Text and write a snippet in the textarea. Enter adds a line break;
 blank lines and Unicode are preserved when you save and reload the binding.
 
-Enable Submit after typing to send one extra Enter after the entire snippet.
+Enable Submit after insertion to send one extra Enter after the entire snippet,
+with a 500 ms wait before submission.
 The setting belongs to that binding and defaults to off. Leave it off to
 insert text without submitting it. Text delivery uses `wtype`.
 Snippet line breaks, including a trailing line break, are sent as Shift+Enter
 so they do not submit chats that use Enter to send. The target app must support
 Shift+Enter for a new line.
+
+Enable Bulk paste to insert the whole snippet through the primary selection
+with Shift+Insert. This setting belongs to the binding and defaults to off.
+It leaves the normal clipboard untouched and replaces the primary selection.
+The target application must map Shift+Insert to primary selection paste.
+Some terminal configurations map it to the normal clipboard instead.
+On Hyprland, keep the pointer over the target app so it receives the primary
+selection. Pasted line breaks remain part of the snippet.
+In terminals, multiline paste behavior depends on
+the terminal and CLI's bracketed paste support.
+
+In a saved text binding, set `bulk = true` to enable bulk paste.
 
 ![Multiline text snippet with Submit after typing enabled](docs/screenshots/text.png)
 
@@ -444,10 +458,15 @@ To check text delivery against a chat-style input, run:
 cargo run --locked --example verify_text_delivery
 ```
 
+To check both text modes directly from the current source without using the
+installed service, run `CODEX_MICRO_TEXT_LOCAL=1 cargo run --locked --example verify_text_delivery`.
+
 This opens a temporary local input where Enter sends and Shift+Enter adds a
 line break. It checks both submit settings with trailing and blank lines,
 Unicode, CRLF, and snippets that start with hyphens. It uses the installed
 service, sends no messages outside the test window, and leaves bindings alone.
+The probe explicitly handles Shift+Insert primary paste; compatibility with
+other apps depends on their shortcut configuration.
 
 The automation socket is opt-in through `CODEX_MICRO_CONTROL_SOCKET` and
 allows access only to the current user. Documentation screenshots live in
