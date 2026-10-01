@@ -78,8 +78,9 @@ Choose an effect and adjust brightness or speed. Colors and effects apply
 immediately. Sliders update the preview while dragging and save when you release
 the handle. Both sliders snap to 10% steps, with ticks from 0% to 100%.
 Brightness is hidden for Off, and speed appears only for animated
-effects. Controls appear after selecting a key or lighting zone. The device
-drawing shows each target's base color.
+effects. Snake and Gradient are available only for Command keys and Border.
+Controls appear after selecting a key or lighting zone. The device drawing shows
+each target's base color.
 
 Each profile has lighting enabled by default and keeps its own colors and
 effects. Existing profiles without lighting settings use solid `#81A1C1` at
