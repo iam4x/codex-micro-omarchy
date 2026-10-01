@@ -116,7 +116,7 @@ impl CodexMicro {
                 ),
                 ActionTab::Text => (
                     "TEXT TO TYPE",
-                    "Press Enter for a new line. Type this text into the focused application, including line breaks and Unicode.",
+                    "Press Enter for a new line. Line breaks are typed as Shift+Enter in the focused application. Supports Unicode.",
                     "Your text here",
                 ),
                 ActionTab::Command => (

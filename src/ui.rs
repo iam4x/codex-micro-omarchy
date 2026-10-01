@@ -20,7 +20,7 @@ use gpui::{
 };
 use gpui_component::{
     Root,
-    input::{InputEvent, InputState},
+    input::{Enter as InputEnter, InputEvent, InputState},
 };
 use std::{collections::VecDeque, time::Instant};
 
@@ -206,7 +206,14 @@ pub fn run() -> anyhow::Result<()> {
         .with_assets(Assets)
         .run(move |cx: &mut App| {
             gpui_component::init(cx);
-            cx.bind_keys([KeyBinding::new("ctrl-s", SaveBinding, Some("CodexMicro"))]);
+            cx.bind_keys([
+                KeyBinding::new("ctrl-s", SaveBinding, Some("CodexMicro")),
+                KeyBinding::new(
+                    "shift-enter",
+                    InputEnter { secondary: false },
+                    Some("Input"),
+                ),
+            ]);
             Palette::load().apply(cx);
             cx.on_window_closed(|cx| {
                 if cx.windows().is_empty() {

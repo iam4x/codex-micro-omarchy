@@ -130,6 +130,9 @@ blank lines and Unicode are preserved when you save and reload the binding.
 Enable Submit after typing to send one extra Enter after the entire snippet.
 The setting belongs to that binding and defaults to off. Leave it off to
 insert text without submitting it. Text delivery uses `wtype`.
+Snippet line breaks, including a trailing line break, are sent as Shift+Enter
+so they do not submit chats that use Enter to send. The target app must support
+Shift+Enter for a new line.
 
 ![Multiline text snippet with Submit after typing enabled](docs/screenshots/text.png)
 
@@ -285,6 +288,17 @@ is stored in `artifacts/native-session.log`.
 Set `CODEX_MICRO_BINARY` to check another build of the app. The verifier uses
 the installed binary by default, and text submission checks run through the
 installed service.
+
+To check text delivery against a chat-style input, run:
+
+```sh
+cargo run --locked --example verify_text_delivery
+```
+
+This opens a temporary local input where Enter sends and Shift+Enter adds a
+line break. It checks both submit settings with trailing and blank lines,
+Unicode, CRLF, and snippets that start with hyphens. It uses the installed
+service, sends no messages outside the test window, and leaves bindings alone.
 
 The automation socket is opt-in through `CODEX_MICRO_CONTROL_SOCKET` and
 allows access only to the current user. Documentation screenshots live in

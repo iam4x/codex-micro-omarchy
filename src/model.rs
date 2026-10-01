@@ -307,11 +307,29 @@ impl Action {
             }
             Self::Text { text, submit } => {
                 ensure!(!text.is_empty(), "Enter some text");
-                let mut typed = text.clone();
-                if *submit {
-                    typed.push('\n');
+                let mut argv = vec!["wtype".into()];
+                let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+                for (index, line) in normalized.split('\n').enumerate() {
+                    if index != 0 {
+                        argv.extend(
+                            ["-M", "shift", "-k", "Return", "-m", "shift"].map(String::from),
+                        );
+                    }
+                    // wtype parses leading hyphens as options. Send them as keys
+                    // so modifier commands can still follow this text segment.
+                    let mut remaining = line;
+                    while let Some(rest) = remaining.strip_prefix('-') {
+                        argv.extend(["-k", "minus"].map(String::from));
+                        remaining = rest;
+                    }
+                    if !remaining.is_empty() {
+                        argv.push(remaining.into());
+                    }
                 }
-                vec!["wtype".into(), "--".into(), typed]
+                if *submit {
+                    argv.extend(["-k", "Return"].map(String::from));
+                }
+                argv
             }
             Self::Command { command } => {
                 ensure!(!command.trim().is_empty(), "Enter a command");
@@ -441,6 +459,21 @@ pub fn config_path() -> PathBuf {
 mod tests {
     use super::*;
     #[test]
+    fn snippet_line_breaks_do_not_send_unmodified_enter() {
+        let action = Action::Text {
+            text: "Hello\n\nCafé\n".into(),
+            submit: false,
+        };
+        assert_eq!(
+            action.argv().unwrap(),
+            [
+                "wtype", "Hello", "-M", "shift", "-k", "Return", "-m", "shift", "-M", "shift",
+                "-k", "Return", "-m", "shift", "Café", "-M", "shift", "-k", "Return", "-m",
+                "shift",
+            ]
+        );
+    }
+    #[test]
     fn text_submit_defaults_off_and_preserves_the_saved_snippet() {
         let original = "--literal text\n\nCafé\n";
         let legacy: Action = toml::from_str("kind = 'text'\ntext = 'hello'").unwrap();
@@ -458,14 +491,37 @@ mod tests {
             };
             let decoded: Action = toml::from_str(&toml::to_string(&action).unwrap()).unwrap();
             assert_eq!(decoded, action);
-            assert_eq!(
-                action.argv().unwrap(),
-                [
-                    "wtype",
-                    "--",
-                    &format!("{original}{}", if submit { "\n" } else { "" })
-                ]
-            );
+            let mut expected = vec![
+                "wtype",
+                "-k",
+                "minus",
+                "-k",
+                "minus",
+                "literal text",
+                "-M",
+                "shift",
+                "-k",
+                "Return",
+                "-m",
+                "shift",
+                "-M",
+                "shift",
+                "-k",
+                "Return",
+                "-m",
+                "shift",
+                "Café",
+                "-M",
+                "shift",
+                "-k",
+                "Return",
+                "-m",
+                "shift",
+            ];
+            if submit {
+                expected.extend(["-k", "Return"]);
+            }
+            assert_eq!(action.argv().unwrap(), expected);
         }
     }
     #[test]
@@ -491,8 +547,43 @@ mod tests {
             }
             .argv()
             .unwrap(),
-            ["wtype", "--", "Line 1\n\nCafé"]
+            [
+                "wtype", "Line 1", "-M", "shift", "-k", "Return", "-m", "shift", "-M", "shift",
+                "-k", "Return", "-m", "shift", "Café",
+            ]
         );
+    }
+
+    #[test]
+    fn text_delivery_handles_crlf_and_literal_wtype_options() {
+        assert_eq!(
+            Action::Text {
+                text: "-M shift\r\n--\r-k Return".into(),
+                submit: true
+            }
+            .argv()
+            .unwrap(),
+            [
+                "wtype", "-k", "minus", "M shift", "-M", "shift", "-k", "Return", "-m", "shift",
+                "-k", "minus", "-k", "minus", "-M", "shift", "-k", "Return", "-m", "shift", "-k",
+                "minus", "k Return", "-k", "Return",
+            ]
+        );
+        for submit in [false, true] {
+            let mut expected = vec!["wtype", "Café ☕"];
+            if submit {
+                expected.extend(["-k", "Return"]);
+            }
+            assert_eq!(
+                Action::Text {
+                    text: "Café ☕".into(),
+                    submit
+                }
+                .argv()
+                .unwrap(),
+                expected
+            );
+        }
     }
 
     #[test]
