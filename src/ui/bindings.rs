@@ -16,14 +16,16 @@ pub(super) enum ActionTab {
     Shortcut,
     Text,
     Command,
+    Ai,
 }
 impl ActionTab {
-    pub(super) const ALL: [Self; 5] = [
+    pub(super) const ALL: [Self; 6] = [
         Self::System,
         Self::App,
         Self::Shortcut,
         Self::Text,
         Self::Command,
+        Self::Ai,
     ];
     pub(super) fn name(self) -> &'static str {
         match self {
@@ -32,6 +34,7 @@ impl ActionTab {
             Self::Shortcut => "Shortcut",
             Self::Text => "Text",
             Self::Command => "Command",
+            Self::Ai => "AI",
         }
     }
     pub(super) fn icon(self) -> &'static str {
@@ -41,6 +44,7 @@ impl ActionTab {
             Self::Shortcut => "keyboard",
             Self::Text => "text",
             Self::Command => "code",
+            Self::Ai => "sparkles",
         }
     }
 }
@@ -56,6 +60,7 @@ impl CodexMicro {
         cx.notify();
     }
     pub(super) fn load_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.invalidate_ai();
         self.shortcut_capture.reset();
         self.text_submit = false;
         let action = self
@@ -86,6 +91,18 @@ impl CodexMicro {
                 self.tab = ActionTab::Command;
                 command
             }
+            Some(Action::Ai {
+                prompt,
+                summary,
+                script,
+            }) => {
+                self.tab = ActionTab::Ai;
+                self.ai_state = super::ai::AiState::Ready {
+                    prompt: prompt.clone(),
+                    generated: crate::ai::GeneratedScript { summary, script },
+                };
+                prompt
+            }
             None => {
                 self.tab = ActionTab::System;
                 self.preset = Preset::Terminal;
@@ -101,6 +118,7 @@ impl CodexMicro {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.invalidate_ai();
         self.tab = tab;
         self.text_submit = false;
         self.action_scroll.set_offset(point(px(0.), px(0.)));
@@ -170,10 +188,10 @@ impl CodexMicro {
         cx.notify();
     }
     pub(super) fn action_input(&self) -> &Entity<InputState> {
-        if self.tab == ActionTab::Text {
-            &self.text_input
-        } else {
-            &self.input
+        match self.tab {
+            ActionTab::Text => &self.text_input,
+            ActionTab::Ai => &self.ai_prompt,
+            _ => &self.input,
         }
     }
     pub(super) fn is_dirty(&self, cx: &App) -> bool {
@@ -192,10 +210,29 @@ impl CodexMicro {
                 submit: self.text_submit,
             },
             ActionTab::Command => Action::Command { command: text },
+            ActionTab::Ai => Action::Ai {
+                prompt: text,
+                summary: self
+                    .ai_state
+                    .output()
+                    .map(|output| output.summary.clone())
+                    .unwrap_or_default(),
+                script: self
+                    .ai_state
+                    .output()
+                    .map(|output| output.script.clone())
+                    .unwrap_or_default(),
+            },
         }
     }
     pub(super) fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.profile_dialog {
+            return;
+        }
+        if self.tab == ActionTab::Ai && !self.ai_can_run(cx) {
+            self.message = "Generate a script first, then save the binding.".into();
+            self.message_error = true;
+            cx.notify();
             return;
         }
         if self.tab == ActionTab::Shortcut && self.shortcut_capture.is_held() {
@@ -297,6 +334,12 @@ impl CodexMicro {
         cx.notify();
     }
     pub(super) fn test(&mut self, cx: &mut Context<Self>) {
+        if self.tab == ActionTab::Ai && !self.ai_can_run(cx) {
+            self.message = "Generate a script first, then test the action.".into();
+            self.message_error = true;
+            cx.notify();
+            return;
+        }
         let action = self.draft(cx);
         if let Err(error) = action.argv() {
             self.message = format!("{error:#}");

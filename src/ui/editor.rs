@@ -104,6 +104,8 @@ impl CodexMicro {
                         })),
                 );
             }
+        } else if self.tab == ActionTab::Ai {
+            action_form = self.ai_editor(window, cx);
         } else {
             let (label, help, example) = match self.tab {
                 ActionTab::App => (
@@ -126,7 +128,7 @@ impl CodexMicro {
                     "Run a command or script with sh. Pipes, variables, and shell syntax are supported.",
                     "notify-send 'Hello from my Micro'",
                 ),
-                ActionTab::System => unreachable!(),
+                ActionTab::System | ActionTab::Ai => unreachable!(),
             };
             let input = if self.tab == ActionTab::Shortcut {
                 let focused = self.shortcut_focus.is_focused(window);
@@ -338,6 +340,7 @@ impl CodexMicro {
     fn footer(&self, assigned: bool, cx: &mut Context<Self>) -> Div {
         let p = self.palette;
         let dirty = self.is_dirty(cx);
+        let action_ready = self.tab != ActionTab::Ai || self.ai_can_run(cx);
         let (dot, state, hint) = match (assigned, dirty) {
             (true, false) => (p.green, "Saved", "Active on your device"),
             (true, true) => (p.accent, "Unsaved changes", "Ctrl+S to save"),
@@ -396,20 +399,26 @@ impl CodexMicro {
                     .items_center()
                     .justify_center()
                     .gap_2()
+                    .when(!action_ready, |button| button.opacity(0.45))
                     .map(|button| {
                         if dirty {
                             button
                                 .bg(rgb(p.accent))
                                 .text_color(rgb(p.panel))
-                                .cursor_pointer()
-                                .hover(|style| style.opacity(0.85))
+                                .when(action_ready, |button| {
+                                    button.cursor_pointer().hover(|style| style.opacity(0.85))
+                                })
                                 .child(self.icon("check", 16., p.panel))
                                 .child(if assigned {
                                     "Save changes"
                                 } else {
                                     "Assign action"
                                 })
-                                .on_click(cx.listener(|this, _, window, cx| this.save(window, cx)))
+                                .when(action_ready, |button| {
+                                    button.on_click(
+                                        cx.listener(|this, _, window, cx| this.save(window, cx)),
+                                    )
+                                })
                         } else {
                             button
                                 .border_1()
@@ -425,11 +434,13 @@ impl CodexMicro {
                     .flex()
                     .gap_3()
                     .child(
-                        button("test-action", true, rgb(p.raised))
+                        button("test-action", action_ready, rgb(p.raised))
                             .flex_1()
                             .child(self.icon("play", 12., p.muted))
                             .child("Test action")
-                            .on_click(cx.listener(|this, _, _, cx| this.test(cx))),
+                            .when(action_ready, |button| {
+                                button.on_click(cx.listener(|this, _, _, cx| this.test(cx)))
+                            }),
                     )
                     .child(
                         button("discard-changes", dirty && assigned, rgb(p.raised))

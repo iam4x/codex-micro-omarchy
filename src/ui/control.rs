@@ -57,6 +57,8 @@ pub enum UiAction {
     CancelProfileDialog,
     SubmitProfile,
     ActivateProfile { index: usize },
+    GenerateAi,
+    CancelAi,
 }
 #[derive(Serialize)]
 pub struct Reply {
@@ -85,6 +87,11 @@ struct Snapshot {
     profile_dialog: bool,
     profile_name: String,
     profile_error: Option<String>,
+    ai_status: &'static str,
+    ai_summary: String,
+    ai_script: String,
+    message: String,
+    message_error: bool,
 }
 
 impl Reply {
@@ -202,6 +209,8 @@ pub fn dispatch(
         UiAction::CancelProfileDialog => view.cancel_profile_dialog(window, cx),
         UiAction::SubmitProfile => view.submit_profile(window, cx),
         UiAction::ActivateProfile { index } => view.activate_profile(index, window, cx)?,
+        UiAction::GenerateAi => view.generate_ai(cx),
+        UiAction::CancelAi => view.cancel_ai(cx),
     }
     Ok(())
 }
@@ -266,6 +275,19 @@ pub fn poll(
                     profile_dialog: view.profile_dialog,
                     profile_name: view.profile_name.read(cx).value().to_string(),
                     profile_error: view.profile_error.read(cx).clone(),
+                    ai_status: view.ai_state.status(),
+                    ai_summary: view
+                        .ai_state
+                        .output()
+                        .map(|output| output.summary.clone())
+                        .unwrap_or_default(),
+                    ai_script: view
+                        .ai_state
+                        .output()
+                        .map(|output| output.script.clone())
+                        .unwrap_or_default(),
+                    message: view.message.clone(),
+                    message_error: view.message_error,
                 })
             }),
         };

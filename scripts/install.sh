@@ -12,6 +12,8 @@ trap 'rm -f -- "$bin_temporary"' EXIT
 install -m755 target/release/codex-micro "$bin_temporary"
 mv "$bin_temporary" "$bin_root/codex-micro"
 install -m644 assets/codex-micro.svg "$data_root/icons/hicolor/scalable/apps/codex-micro.svg"
+install -d "$data_root/codex-micro/skills/codex-micro"
+install -m644 skills/codex-micro/SKILL.md "$data_root/codex-micro/skills/codex-micro/SKILL.md"
 cat > "$data_root/applications/codex-micro.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application

@@ -157,6 +157,11 @@ pub enum Action {
     Command {
         command: String,
     },
+    Ai {
+        prompt: String,
+        summary: String,
+        script: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -275,6 +280,7 @@ impl Action {
             Self::Shortcut { chord } => chord.clone(),
             Self::Text { .. } => "Type text".into(),
             Self::Command { .. } => "Run command".into(),
+            Self::Ai { summary, .. } => summary.clone(),
         }
     }
     pub fn argv(&self) -> Result<Vec<String>> {
@@ -334,6 +340,28 @@ impl Action {
             Self::Command { command } => {
                 ensure!(!command.trim().is_empty(), "Enter a command");
                 vec!["sh".into(), "-c".into(), command.clone()]
+            }
+            Self::Ai {
+                prompt,
+                summary,
+                script,
+            } => {
+                ensure!(
+                    !prompt.trim().is_empty(),
+                    "Describe what this action should do"
+                );
+                ensure!(prompt.len() <= 16 * 1024, "AI prompts must be under 16 KiB");
+                ensure!(
+                    !summary.trim().is_empty() && !script.trim().is_empty(),
+                    "Generate a script first"
+                );
+                ensure!(summary.len() <= 1024, "AI summary must be under 1 KiB");
+                ensure!(script.len() <= 64 * 1024, "AI scripts must be under 64 KiB");
+                ensure!(
+                    !prompt.contains('\0') && !summary.contains('\0'),
+                    "AI actions cannot contain null characters"
+                );
+                vec!["sh".into(), "-c".into(), script.clone()]
             }
         };
         ensure!(
@@ -548,6 +576,63 @@ pub fn config_path() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ai_action_round_trip_executes_only_the_saved_script() {
+        let action = Action::Ai {
+            prompt: "Focus an application\nLaunch if closed".into(),
+            summary: "Focus application".into(),
+            script: "printf '%s' '$HOME'\ntrue".into(),
+        };
+        assert_eq!(action.title(), "Focus application");
+        assert_eq!(
+            action.argv().unwrap(),
+            ["sh", "-c", "printf '%s' '$HOME'\ntrue"]
+        );
+        assert_eq!(
+            toml::from_str::<Action>(&toml::to_string(&action).unwrap()).unwrap(),
+            action
+        );
+        let mut profile = Profile::default();
+        profile.assign(Control::AG02, Phase::Release, Some(action.clone()));
+        let decoded = Profiles::parse(&toml::to_string(&profile).unwrap()).unwrap();
+        assert_eq!(
+            decoded.active().action(Control::AG02, Phase::Release),
+            Some(&action)
+        );
+        let mut profiles = decoded;
+        let other = profiles.add("Other").unwrap();
+        profiles.activate(other).unwrap();
+        let decoded = Profiles::parse(&toml::to_string(&profiles).unwrap()).unwrap();
+        assert!(decoded.active().bindings.is_empty());
+        assert_eq!(
+            decoded.list()[0].action(Control::AG02, Phase::Release),
+            Some(&action)
+        );
+    }
+    #[test]
+    fn ai_actions_reject_incomplete_oversized_and_null_fields() {
+        for (prompt, summary, script) in [
+            ("".into(), "Title".into(), "true".into()),
+            ("Intent".into(), "".into(), "true".into()),
+            ("Intent".into(), "Title".into(), "".into()),
+            ("x".repeat(16 * 1024 + 1), "Title".into(), "true".into()),
+            ("Intent".into(), "x".repeat(1025), "true".into()),
+            ("Intent".into(), "Title".into(), "x".repeat(64 * 1024 + 1)),
+            ("Intent\0".into(), "Title".into(), "true".into()),
+            ("Intent".into(), "Title\0".into(), "true".into()),
+            ("Intent".into(), "Title".into(), "true\0".into()),
+        ] {
+            assert!(
+                Action::Ai {
+                    prompt,
+                    summary,
+                    script
+                }
+                .argv()
+                .is_err()
+            );
+        }
+    }
     #[test]
     fn snippet_line_breaks_do_not_send_unmodified_enter() {
         let action = Action::Text {

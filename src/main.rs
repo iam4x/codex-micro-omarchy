@@ -1,3 +1,4 @@
+mod ai;
 mod daemon;
 mod model;
 mod protocol;
@@ -28,8 +29,12 @@ fn main() -> anyhow::Result<()> {
         }
         Some("--help") => {
             println!(
-                "Codex Micro\n\nOpen the app with no arguments.\n  --daemon         Run the background device service\n  --status         Read the live device status\n  --check-config   Validate saved bindings"
+                "Codex Micro\n\nOpen the app with no arguments.\n  --daemon         Run the background device service\n  --status         Read the live device status\n  --check-config   Validate saved bindings\n  --print-ai-skill Print the bundled AI automation guide"
             );
+            Ok(())
+        }
+        Some("--print-ai-skill") => {
+            print!("{}", ai::skill());
             Ok(())
         }
         Some(argument) => anyhow::bail!("Unknown argument: {argument}"),
