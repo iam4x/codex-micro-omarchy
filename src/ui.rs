@@ -5,6 +5,7 @@ mod device_view;
 mod editor;
 mod events;
 mod layout;
+mod lighting;
 mod profiles;
 mod shortcut;
 
@@ -30,6 +31,7 @@ use bindings::ActionTab;
 
 pub(super) struct CodexMicro {
     palette: Palette,
+    lighting: lighting::LightingEditor,
     profiles: Profiles,
     profile_dialog: bool,
     profile_name: Entity<InputState>,
@@ -146,8 +148,10 @@ impl CodexMicro {
             }
         });
         Self::start_events(window, cx);
+        let (lighting, lighting_subscriptions) = lighting::LightingEditor::new(window, cx);
         let mut view = Self {
             palette,
+            lighting,
             profiles,
             profile_dialog: false,
             profile_name,
@@ -188,6 +192,8 @@ impl CodexMicro {
                 intercept_subscription,
             ],
         };
+        view._subscriptions.extend(lighting_subscriptions);
+        view.load_lighting(window, cx);
         view.load_editor(window, cx);
         view
     }
@@ -219,6 +225,10 @@ impl CodexMicro {
                     self.message = message;
                     self.message_error = true;
                 }
+            }
+            Event::LightingApplied => {
+                self.message = "Lighting applied to your Micro".into();
+                self.message_error = false;
             }
             Event::ConfigError(error) => {
                 self.message = error;

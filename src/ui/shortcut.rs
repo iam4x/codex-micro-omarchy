@@ -228,7 +228,8 @@ impl CodexMicro {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.tab != ActionTab::Shortcut
+        if self.lighting.page
+            || self.tab != ActionTab::Shortcut
             || self.shortcut_manual
             || !self.shortcut_focus.is_focused(window)
         {
@@ -257,7 +258,8 @@ impl CodexMicro {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.tab != ActionTab::Shortcut
+        if self.lighting.page
+            || self.tab != ActionTab::Shortcut
             || self.shortcut_manual
             || !self.shortcut_focus.is_focused(window)
         {
@@ -273,7 +275,8 @@ impl CodexMicro {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.tab != ActionTab::Shortcut
+        if self.lighting.page
+            || self.tab != ActionTab::Shortcut
             || self.shortcut_manual
             || !self.shortcut_focus.is_focused(window)
         {

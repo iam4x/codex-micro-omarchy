@@ -38,6 +38,10 @@ pub struct Snapshot {
     pub ai_status: String,
     pub ai_summary: String,
     pub ai_script: String,
+    pub lighting: Option<Value>,
+    pub lighting_draft: Value,
+    pub lighting_target: usize,
+    pub lighting_dirty: bool,
     pub message: String,
     pub message_error: bool,
 }
@@ -204,7 +208,14 @@ impl NativeApp {
         let log = fs::OpenOptions::new()
             .append(true)
             .open(self.artifacts.join("native-session.log"))?;
-        self.child = Command::new(&self.binary)
+        let mut command = Command::new(&self.binary);
+        let fixture = self.temporary.path().join("codex-fixture");
+        if fixture.exists() {
+            command.env("CODEX_MICRO_CODEX", fixture);
+        } else {
+            command.env_remove("CODEX_MICRO_CODEX");
+        }
+        self.child = command
             .env("XDG_CONFIG_HOME", self.temporary.path())
             .env("CODEX_MICRO_CONTROL_SOCKET", &self.endpoint)
             .stdout(Stdio::from(log.try_clone()?))
@@ -237,12 +248,11 @@ impl NativeApp {
                 &format!("hl.dsp.focus({{window={selector:?}}})"),
             ],
         )?;
-        let active: Value = serde_json::from_str(&run("hyprctl", &["-j", "activewindow"])?)?;
-        ensure!(
-            active["pid"] == self.pid(),
-            "Temporary window is not focused"
-        );
-        Ok(())
+        wait_until(|| {
+            let active: Value = serde_json::from_str(&run("hyprctl", &["-j", "activewindow"])?)?;
+            Ok(active["pid"] == self.pid())
+        })
+        .context("Temporary window is not focused")
     }
 
     fn prepare_window(&self) -> Result<()> {

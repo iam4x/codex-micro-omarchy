@@ -120,6 +120,7 @@ impl CodexMicro {
                 self.profiles = updated;
                 self.reset_backup = None;
                 self.load_editor(window, cx);
+                self.load_lighting(window, cx);
                 self.message = format!("Profile {} active", self.profiles.active().name);
                 self.message_error = false;
                 cx.notify();

@@ -131,7 +131,7 @@ impl CodexMicro {
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .child("CODEX MICRO"),
                             )
-                            .child(self.label("BUTTON BINDINGS")),
+                            .child(self.label("DEVICE CONTROLS")),
                     ),
             )
             .child(div().px_5().pt_5().pb_3().child(self.label("DEVICES")))
@@ -172,6 +172,36 @@ impl CodexMicro {
             .child(div().px_5().pt_8().pb_3().child(self.label("PROFILES")))
             .child(profiles)
     }
+    fn page_tabs(&self, cx: &mut Context<Self>) -> Div {
+        let p = self.palette;
+        let mut row = div()
+            .px_8()
+            .py_2()
+            .flex()
+            .gap_4()
+            .border_b_1()
+            .border_color(rgb(p.border));
+        for (page, name) in [(false, "Bindings"), (true, "Lighting")] {
+            row =
+                row.child(
+                    div()
+                        .id(name)
+                        .px_3()
+                        .py_2()
+                        .cursor_pointer()
+                        .text_color(rgb(if self.lighting.page == page {
+                            p.accent
+                        } else {
+                            p.muted
+                        }))
+                        .child(name)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.show_lighting(page, window, cx)
+                        })),
+                );
+        }
+        row
+    }
     fn header(&self) -> Div {
         let p = self.palette;
         let status = match &self.status {
@@ -211,7 +241,7 @@ impl CodexMicro {
                         div()
                             .text_size(px(13.))
                             .text_color(rgb(p.muted))
-                            .child("Button assignments for your Omarchy desktop."),
+                            .child("Button assignments and lighting for your Omarchy desktop."),
                     ),
             )
             .child(
@@ -254,13 +284,19 @@ impl Render for CodexMicro {
                     .flex()
                     .flex_col()
                     .child(self.header())
+                    .child(self.page_tabs(cx))
                     .child(
                         div()
                             .flex_1()
                             .min_h_0()
                             .flex()
                             .child(self.device_panel(cx))
-                            .child(self.editor(window, cx)),
+                            .when(self.lighting.page, |panel| {
+                                panel.child(self.lighting_panel(cx))
+                            })
+                            .when(!self.lighting.page, |panel| {
+                                panel.child(self.editor(window, cx))
+                            }),
                     )
                     .child(
                         div()
@@ -290,7 +326,7 @@ impl Render for CodexMicro {
                                     }))
                                     .child(self.message.clone()),
                             )
-                            .child(self.label("Bindings stay active when closed")),
+                            .child(self.label("Saved settings stay active when closed")),
                     ),
             )
             .children(dialog_layer)

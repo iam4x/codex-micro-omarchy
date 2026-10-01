@@ -16,8 +16,9 @@ fn main() -> Result<()> {
         [flag] if flag == "--ai-only" => "ai",
         [flag] if flag == "--joystick" => "joystick",
         [flag] if flag == "--shortcuts" => "shortcuts",
+        [flag] if flag == "--lighting" => "lighting",
         _ => anyhow::bail!(
-            "Usage: verify-native [--profiles | --ai-only | --joystick | --shortcuts]"
+            "Usage: verify-native [--profiles | --ai-only | --joystick | --shortcuts | --lighting]"
         ),
     };
     let mut app = NativeApp::start()?;
@@ -26,6 +27,7 @@ fn main() -> Result<()> {
         "ai" => ai::check(&app),
         "joystick" => check_joystick(&mut app),
         "shortcuts" => check_shortcuts(&app),
+        "lighting" => check_lighting(&mut app),
         _ => verify(&mut app),
     };
     if result.is_err() {
@@ -36,6 +38,7 @@ fn main() -> Result<()> {
     if mode != "profiles"
         && mode != "joystick"
         && mode != "shortcuts"
+        && mode != "lighting"
         && std::env::var_os("CODEX_MICRO_VERIFY_REAL_AI").is_none()
     {
         ai::check_window_close()?;
@@ -695,6 +698,115 @@ fn check_reset(app: &NativeApp) -> Result<()> {
     );
     println!(
         "PASS: remove asks for confirmation, Escape cancels, Enter clears only the selected binding"
+    );
+    Ok(())
+}
+
+fn check_lighting(app: &mut NativeApp) -> Result<()> {
+    let bindings = app.bindings()?;
+    ensure!(
+        app.inspect()?.lighting.is_none(),
+        "Legacy lighting should be unmanaged"
+    );
+    app.ui(json!({"action":"tab","tab":"command"}))?;
+    app.type_text("printf keep-lighting-draft")?;
+    app.ui(json!({"action":"lighting_page","open":true}))?;
+    app.ui(json!({"action":"lighting_enabled","enabled":true}))?;
+    let effects = [
+        "solid",
+        "snake",
+        "rainbow",
+        "breath",
+        "gradient",
+        "off",
+        "shallow_breath",
+        "solid",
+    ];
+    let colors = [
+        0xe5edf5, 0x60a5fa, 0x4ade80, 0xfbbf24, 0xc084fc, 0xfb7185, 0xa5c7e8, 0x2dd4bf,
+    ];
+    for (target, effect) in effects.into_iter().enumerate() {
+        app.ui(json!({"action":"lighting_target","target":target}))?;
+        app.ui(json!({"action":"lighting_value","light":{"color":colors[target],"effect":effect,"brightness":60,"speed":30}}))?;
+    }
+    app.ui(json!({"action":"select","control":"AG02"}))?;
+    app.ui(json!({"action":"lighting_page","open":false}))?;
+    ensure!(
+        app.inspect()?.input == "printf keep-lighting-draft",
+        "Lighting selection discarded the binding draft"
+    );
+    app.ui(json!({"action":"lighting_page","open":true}))?;
+    app.ui(json!({"action":"lighting_target","target":7}))?;
+    let draft = app.inspect()?.lighting_draft;
+    ensure!(
+        app.inspect()?.lighting_dirty,
+        "Lighting draft should be dirty"
+    );
+    ensure!(
+        !app.request(json!({"op":"ui","action":"lighting_target","target":8}))?
+            .ok,
+        "Invalid target accepted"
+    );
+    app.key("ctrl-s")?;
+    ensure!(
+        app.inspect()?.lighting == Some(draft.clone()) && !app.inspect()?.lighting_dirty,
+        "Lighting save failed"
+    );
+    ensure!(app.bindings()? == bindings, "Lighting changed bindings");
+    app.screenshot("native-lighting")?;
+    app.restart()?;
+    ensure!(
+        app.inspect()?.lighting == Some(draft.clone()),
+        "Lighting did not reload"
+    );
+    app.ui(json!({"action":"lighting_page","open":true}))?;
+    app.ui(json!({"action":"select","control":"AG02"}))?;
+    ensure!(
+        app.inspect()?.lighting_target == 2,
+        "Device key did not select Agent LED"
+    );
+    app.ui(json!({"action":"select","control":"MIC"}))?;
+    ensure!(
+        app.inspect()?.lighting_target == 6,
+        "Command key did not select grouped LEDs"
+    );
+    app.ui(json!({"action":"lighting_value","light":{"color":0,"effect":"off","brightness":0,"speed":0}}))?;
+    app.ui(json!({"action":"discard_lighting"}))?;
+    ensure!(
+        app.inspect()?.lighting_draft == draft && !app.inspect()?.lighting_dirty,
+        "Discard failed"
+    );
+    app.ui(json!({"action":"open_profile_dialog"}))?;
+    app.type_text("Lighting test")?;
+    app.ui(json!({"action":"submit_profile"}))?;
+    app.ui(json!({"action":"activate_profile","index":1}))?;
+    ensure!(
+        app.inspect()?.lighting.is_none(),
+        "New profile inherited lighting"
+    );
+    app.ui(json!({"action":"activate_profile","index":0}))?;
+    ensure!(
+        app.inspect()?.lighting_draft == draft,
+        "Switching profiles lost lighting"
+    );
+    app.ui(json!({"action":"reset"}))?;
+    app.ui(json!({"action":"lighting_target","target":7}))?;
+    app.ui(json!({"action":"lighting_value","light":{"color":0xff6600,"effect":"breath","brightness":45,"speed":50}}))?;
+    app.ui(json!({"action":"save_lighting"}))?;
+    let after_reset = app.inspect()?.lighting;
+    app.ui(json!({"action":"undo_reset"}))?;
+    ensure!(
+        app.inspect()?.lighting == after_reset && app.bindings()? == bindings,
+        "Undo reset reverted lighting or lost bindings"
+    );
+    app.ui(json!({"action":"lighting_enabled","enabled":false}))?;
+    app.ui(json!({"action":"save_lighting"}))?;
+    ensure!(
+        app.inspect()?.lighting.is_none(),
+        "Disabling did not release lighting control"
+    );
+    println!(
+        "PASS: eight lighting targets, effects, save/reload, discard, key selection, profile isolation, and opt-out"
     );
     Ok(())
 }

@@ -1,5 +1,6 @@
 mod ai;
 mod daemon;
+mod lighting;
 mod model;
 mod protocol;
 mod theme;

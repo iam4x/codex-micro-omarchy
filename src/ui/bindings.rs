@@ -51,6 +51,25 @@ impl ActionTab {
 
 impl CodexMicro {
     pub(super) fn select(&mut self, control: Control, window: &mut Window, cx: &mut Context<Self>) {
+        if self.lighting.page {
+            let target = match control {
+                Control::AG00 => 0,
+                Control::AG01 => 1,
+                Control::AG02 => 2,
+                Control::AG03 => 3,
+                Control::AG04 => 4,
+                Control::AG05 => 5,
+                Control::ACT06
+                | Control::ACT07
+                | Control::ACT08
+                | Control::ACT09
+                | Control::Mic
+                | Control::ACT12 => 6,
+                _ => return,
+            };
+            self.select_light(target, window, cx);
+            return;
+        }
         self.shortcut_capture.reset();
         self.selected = control;
         self.phase = control.primary_phase();
@@ -173,7 +192,7 @@ impl CodexMicro {
             return;
         };
         let mut updated = self.profiles.clone();
-        *updated.active_mut() = previous.clone();
+        updated.active_mut().bindings = previous.bindings.clone();
         match updated.save(&config_path()) {
             Ok(()) => {
                 self.profiles = updated;
@@ -229,6 +248,10 @@ impl CodexMicro {
     }
     pub(super) fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.profile_dialog {
+            return;
+        }
+        if self.lighting.page {
+            self.save_lighting(cx);
             return;
         }
         if self.tab == ActionTab::Ai && !self.ai_can_run(cx) {

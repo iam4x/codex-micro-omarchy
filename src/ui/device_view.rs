@@ -8,7 +8,29 @@ use gpui::{Context, Div, FontWeight, SharedString, Stateful, div, prelude::*, px
 impl CodexMicro {
     fn key(&self, control: Control, width: f32, cx: &mut Context<Self>) -> Stateful<Div> {
         let p = self.palette;
-        let selected = self.selected == control;
+        let target = match control {
+            Control::AG00 => 0,
+            Control::AG01 => 1,
+            Control::AG02 => 2,
+            Control::AG03 => 3,
+            Control::AG04 => 4,
+            Control::AG05 => 5,
+            _ => 6,
+        };
+        let light = self.lighting.draft.light(target);
+        let light_color = if self.lighting.enabled
+            && light.effect != crate::lighting::Effect::Off
+            && light.brightness > 0
+        {
+            light.color
+        } else {
+            p.border
+        };
+        let selected = if self.lighting.page {
+            self.lighting.target == target
+        } else {
+            self.selected == control
+        };
         let active = self.active.is_some_and(|(key, _)| key == control);
         let action = self
             .profiles
@@ -61,16 +83,26 @@ impl CodexMicro {
                     )
                     .child(
                         div()
-                            .size(px(4.))
+                            .size(px(if self.lighting.page { 8. } else { 4. }))
                             .rounded_full()
-                            .bg(rgb(if action.is_some() { p.accent } else { p.border })),
+                            .bg(rgb(if self.lighting.page {
+                                light_color
+                            } else if action.is_some() {
+                                p.accent
+                            } else {
+                                p.border
+                            })),
                     ),
             )
             .child(
                 div()
                     .text_size(px(10.))
                     .text_color(rgb(if action.is_some() { p.text } else { p.muted }))
-                    .child(title),
+                    .child(if self.lighting.page {
+                        format!("#{:06X}", light_color)
+                    } else {
+                        title
+                    }),
             )
             .on_click(cx.listener(move |this, _, window, cx| this.select(control, window, cx)))
     }
@@ -126,7 +158,17 @@ impl CodexMicro {
             .flex_shrink_0()
             .bg(rgb(0x191919))
             .border_1()
-            .border_color(rgb(p.border))
+            .border_color(rgb(
+                if self.lighting.page
+                    && self.lighting.enabled
+                    && self.lighting.draft.ambient.effect != crate::lighting::Effect::Off
+                    && self.lighting.draft.ambient.brightness > 0
+                {
+                    self.lighting.draft.ambient.color
+                } else {
+                    p.border
+                },
+            ))
             .rounded(px(9.))
             .flex()
             .flex_col()
@@ -298,7 +340,11 @@ impl CodexMicro {
                     .child(self.label(if self.identify {
                         "Press a button, turn the dial, or move the joystick"
                     } else {
-                        "Click a control to change its action"
+                        if self.lighting.page {
+                            "Click a key to select its lighting. Preview shows the base color."
+                        } else {
+                            "Click a control to change its action"
+                        }
                     })),
             )
             .child(
@@ -355,68 +401,76 @@ impl CodexMicro {
                             self.profiles.active().bindings.len()
                         ))),
                 )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .when(self.reset_backup.is_some(), |row| {
-                            row.child(
+                .when(!self.lighting.page, |header| {
+                    header.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .when(self.reset_backup.is_some(), |row| {
+                                row.child(
+                                    div()
+                                        .id("undo-reset")
+                                        .px_3()
+                                        .py_2()
+                                        .text_size(px(11.))
+                                        .text_color(rgb(p.accent))
+                                        .cursor_pointer()
+                                        .hover(|style| style.bg(rgb(p.raised)))
+                                        .child("Undo reset")
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.undo_reset(window, cx)
+                                        })),
+                                )
+                            })
+                            .child(
                                 div()
-                                    .id("undo-reset")
+                                    .id("reset-all")
                                     .px_3()
                                     .py_2()
                                     .text_size(px(11.))
-                                    .text_color(rgb(p.accent))
+                                    .text_color(rgb(
+                                        if self.profiles.active().bindings.is_empty() {
+                                            p.muted
+                                        } else {
+                                            p.text
+                                        },
+                                    ))
                                     .cursor_pointer()
-                                    .hover(|style| style.bg(rgb(p.raised)))
-                                    .child("Undo reset")
+                                    .hover(|style| style.text_color(rgb(p.red)))
+                                    .child("Reset all")
                                     .on_click(cx.listener(|this, _, window, cx| {
-                                        this.undo_reset(window, cx)
+                                        this.reset_all(window, cx)
                                     })),
                             )
-                        })
-                        .child(
-                            div()
-                                .id("reset-all")
-                                .px_3()
-                                .py_2()
-                                .text_size(px(11.))
-                                .text_color(rgb(if self.profiles.active().bindings.is_empty() {
-                                    p.muted
-                                } else {
-                                    p.text
-                                }))
-                                .cursor_pointer()
-                                .hover(|style| style.text_color(rgb(p.red)))
-                                .child("Reset all")
-                                .on_click(
-                                    cx.listener(|this, _, window, cx| this.reset_all(window, cx)),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .id("identify")
-                                .px_3()
-                                .py_2()
-                                .border_1()
-                                .border_color(rgb(if self.identify { p.accent } else { p.border }))
-                                .rounded(px(3.))
-                                .text_size(px(11.))
-                                .text_color(rgb(if self.identify { p.accent } else { p.text }))
-                                .cursor_pointer()
-                                .hover(|style| style.bg(rgb(p.raised)))
-                                .child(if self.identify {
-                                    "Listening…"
-                                } else {
-                                    "Identify key"
-                                })
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.identify = !this.identify;
-                                    cx.notify();
-                                })),
-                        ),
-                ),
+                            .child(
+                                div()
+                                    .id("identify")
+                                    .px_3()
+                                    .py_2()
+                                    .border_1()
+                                    .border_color(rgb(if self.identify {
+                                        p.accent
+                                    } else {
+                                        p.border
+                                    }))
+                                    .rounded(px(3.))
+                                    .text_size(px(11.))
+                                    .text_color(rgb(if self.identify { p.accent } else { p.text }))
+                                    .cursor_pointer()
+                                    .hover(|style| style.bg(rgb(p.raised)))
+                                    .child(if self.identify {
+                                        "Listening…"
+                                    } else {
+                                        "Identify key"
+                                    })
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.identify = !this.identify;
+                                        cx.notify();
+                                    })),
+                            ),
+                    )
+                }),
         );
         if let DeviceStatus::Disconnected { message } = &self.status {
             panel = panel.child(
