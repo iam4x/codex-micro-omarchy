@@ -202,7 +202,12 @@ fn device_loop(hub: SharedHub) {
                     next_status = Instant::now() + Duration::from_secs(3);
                 }
                 let lighting = hub.lock().unwrap().profile.lighting.clone();
-                for request in lighting_sync.update(layer, &lighting, &mut request_id) {
+                let lighting_requests = if lighting_ids.is_empty() {
+                    lighting_sync.update(layer, &lighting, &mut request_id)
+                } else {
+                    Vec::new()
+                };
+                for request in lighting_requests {
                     if lighting_ids.is_empty() {
                         lighting_failed = false;
                     }
@@ -260,6 +265,9 @@ fn device_loop(hub: SharedHub) {
                             }
                         } else {
                             for input in inputs.notification(&message) {
+                                if layer == Some(1) {
+                                    lighting_sync.input(&input, Instant::now());
+                                }
                                 publish(&hub, Event::Input(input.clone()));
                                 let action = hub
                                     .lock()
