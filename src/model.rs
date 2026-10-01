@@ -357,7 +357,7 @@ impl Action {
                     }
                 }
                 if *submit {
-                    argv.extend(["-k", "Return"].map(String::from));
+                    argv.extend(["-s", "100", "-k", "Return"].map(String::from));
                 }
                 argv
             }
@@ -718,7 +718,7 @@ mod tests {
                 "shift",
             ];
             if submit {
-                expected.extend(["-k", "Return"]);
+                expected.extend(["-s", "100", "-k", "Return"]);
             }
             assert_eq!(action.argv().unwrap(), expected);
         }
@@ -765,13 +765,13 @@ mod tests {
             [
                 "wtype", "-k", "minus", "M shift", "-M", "shift", "-k", "Return", "-m", "shift",
                 "-k", "minus", "-k", "minus", "-M", "shift", "-k", "Return", "-m", "shift", "-k",
-                "minus", "k Return", "-k", "Return",
+                "minus", "k Return", "-s", "100", "-k", "Return",
             ]
         );
         for submit in [false, true] {
             let mut expected = vec!["wtype", "Café ☕"];
             if submit {
-                expected.extend(["-k", "Return"]);
+                expected.extend(["-s", "100", "-k", "Return"]);
             }
             assert_eq!(
                 Action::Text {
