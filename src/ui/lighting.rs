@@ -28,14 +28,14 @@ impl LightingEditor {
             SliderState::new()
                 .min(0.)
                 .max(100.)
-                .step(1.)
+                .step(10.)
                 .default_value(f32::from(light.brightness))
         });
         let speed = cx.new(|_| {
             SliderState::new()
                 .min(0.)
                 .max(100.)
-                .step(1.)
+                .step(10.)
                 .default_value(f32::from(light.speed))
         });
         let subscriptions = vec![
@@ -47,22 +47,37 @@ impl LightingEditor {
                     this.apply_lighting(cx);
                 }
             }),
-            cx.subscribe(&brightness, |this, _, event: &SliderEvent, cx| {
-                let Some(target) = this.lighting.target else {
-                    return;
-                };
-                let SliderEvent::Change(value) = event;
-                this.lighting.settings.light_mut(target).brightness = value.start().round() as u8;
-                cx.notify();
-            }),
-            cx.subscribe(&speed, |this, _, event: &SliderEvent, cx| {
-                let Some(target) = this.lighting.target else {
-                    return;
-                };
-                let SliderEvent::Change(value) = event;
-                this.lighting.settings.light_mut(target).speed = value.start().round() as u8;
-                cx.notify();
-            }),
+            cx.subscribe_in(
+                &brightness,
+                window,
+                |this, slider, event: &SliderEvent, window, cx| {
+                    let Some(target) = this.lighting.target else {
+                        return;
+                    };
+                    let SliderEvent::Change(value) = event;
+                    this.lighting.settings.light_mut(target).brightness =
+                        snap_percentage(value.start());
+                    slider.update(cx, |state, cx| {
+                        state.set_value(f32::from(snap_percentage(value.start())), window, cx)
+                    });
+                    cx.notify();
+                },
+            ),
+            cx.subscribe_in(
+                &speed,
+                window,
+                |this, slider, event: &SliderEvent, window, cx| {
+                    let Some(target) = this.lighting.target else {
+                        return;
+                    };
+                    let SliderEvent::Change(value) = event;
+                    this.lighting.settings.light_mut(target).speed = snap_percentage(value.start());
+                    slider.update(cx, |state, cx| {
+                        state.set_value(f32::from(snap_percentage(value.start())), window, cx)
+                    });
+                    cx.notify();
+                },
+            ),
         ];
         (
             Self {
@@ -155,6 +170,25 @@ impl CodexMicro {
         if self.lighting.settings != self.profiles.active().lighting {
             self.apply_lighting(cx);
         }
+    }
+    fn lighting_slider(&self, state: &Entity<SliderState>) -> Div {
+        let mut ticks = div().flex().justify_between().w_full();
+        for _ in 0..=10 {
+            ticks = ticks.child(div().w(px(1.)).h(px(6.)).bg(rgb(self.palette.muted)));
+        }
+        div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(Slider::new(state))
+            .child(ticks)
+            .child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .child(self.label("0%"))
+                    .child(self.label("100%")),
+            )
     }
     pub(super) fn lighting_panel(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let p = self.palette;
@@ -284,7 +318,7 @@ impl CodexMicro {
                         .flex_col()
                         .gap_3()
                         .child(self.label(format!("BRIGHTNESS  {}%", light.brightness)))
-                        .child(Slider::new(&self.lighting.brightness)),
+                        .child(self.lighting_slider(&self.lighting.brightness)),
                 )
             })
             .when(light.effect.animated(), |panel| {
@@ -294,10 +328,14 @@ impl CodexMicro {
                         .flex_col()
                         .gap_3()
                         .child(self.label(format!("SPEED  {}%", light.speed)))
-                        .child(Slider::new(&self.lighting.speed)),
+                        .child(self.lighting_slider(&self.lighting.speed)),
                 )
             })
     }
+}
+
+fn snap_percentage(value: f32) -> u8 {
+    ((value.clamp(0., 100.) / 10.).round() * 10.) as u8
 }
 
 fn picker_rgb(color: gpui::Hsla) -> u32 {

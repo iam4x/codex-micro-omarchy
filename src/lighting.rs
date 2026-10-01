@@ -64,7 +64,7 @@ impl Default for Light {
         Self {
             color: 0x81a1c1,
             effect: Effect::Solid,
-            brightness: 35,
+            brightness: 40,
             speed: 40,
         }
     }

@@ -2,7 +2,8 @@
 
 Every profile has lighting enabled. The editor saves colors and effects immediately.
 Brightness and speed preview locally during dragging and save on release, so the
-service sends only the final slider value to the device. The service checks for
+service sends only the final slider value to the device. Both sliders snap to
+10% steps, including 0% and 100%. The service checks for
 configuration updates every 50 milliseconds.
 Omitted `lighting` tables load the default settings. Configuration validation rejects
 colors above `0xFFFFFF` and brightness or speed above 100 before replacing the
@@ -11,7 +12,7 @@ saved file. The six-element `agents` array fixes the number of individual LEDs.
 ```toml
 [profiles.lighting.keys]
 color = 16744192 # #FF8000
-brightness = 35
+brightness = 40
 speed = 40
 effect = "solid"
 
@@ -23,7 +24,7 @@ effect = "snake"
 ```
 
 The six Agent entries use `[[profiles.lighting.agents]]`. Omit the array to
-use six default lights. Defaults are solid `#81A1C1`, 35% brightness and 40%
+use six default lights. Defaults are solid `#81A1C1`, 40% brightness and 40%
 speed. Effect names in TOML are `off`, `solid`, `snake`, `rainbow`, `breath`,
 `gradient`, and `shallow_breath`.
 
