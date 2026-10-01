@@ -3,6 +3,7 @@
 use super::{ActionTab, CodexMicro};
 use crate::model::{Control, Phase, Preset};
 use crate::wire;
+use anyhow::Context as _;
 use gpui::{
     App, AsyncWindowContext, Context, KeyUpEvent, Keystroke, Modifiers, ModifiersChangedEvent,
     WeakEntity, Window, point, px,
@@ -61,6 +62,8 @@ pub enum UiAction {
     LightingPage { open: bool },
     LightingTarget { target: usize },
     LightingValue { light: crate::lighting::Light },
+    LightingSlider { speed: bool, value: u8 },
+    LightingSliderRelease,
     GenerateAi,
     CancelAi,
 }
@@ -96,7 +99,7 @@ struct Snapshot {
     ai_summary: String,
     ai_script: String,
     lighting: crate::lighting::Lighting,
-    lighting_target: usize,
+    lighting_target: Option<usize>,
     message: String,
     message_error: bool,
 }
@@ -224,10 +227,23 @@ pub fn dispatch(
         }
         UiAction::LightingValue { light } => {
             light.validate()?;
-            *view.lighting.settings.light_mut(view.lighting.target) = light;
-            view.select_light(view.lighting.target, window, cx);
+            let target = view
+                .lighting
+                .target
+                .context("Select a lighting target first")?;
+            *view.lighting.settings.light_mut(target) = light;
+            view.select_light(target, window, cx);
             view.apply_lighting(cx);
         }
+        UiAction::LightingSlider { speed, value } => {
+            anyhow::ensure!(value <= 100, "Invalid slider value");
+            anyhow::ensure!(
+                view.lighting.target.is_some(),
+                "Select a lighting target first"
+            );
+            view.slider_change(speed, value, cx);
+        }
+        UiAction::LightingSliderRelease => view.finish_lighting_drag(cx),
         UiAction::GenerateAi => view.generate_ai(cx),
         UiAction::CancelAi => view.cancel_ai(cx),
     }
@@ -306,7 +322,7 @@ pub fn poll(
                         .output()
                         .map(|output| output.script.clone())
                         .unwrap_or_default(),
-                    lighting: view.profiles.active().lighting.clone(),
+                    lighting: view.lighting.settings.clone(),
                     lighting_target: view.lighting.target,
                     message: view.message.clone(),
                     message_error: view.message_error,

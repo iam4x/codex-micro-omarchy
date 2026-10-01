@@ -4,7 +4,8 @@ use crate::{
     model::config_path,
 };
 use gpui::{
-    Context, Div, Entity, SharedString, Stateful, Subscription, Window, div, prelude::*, px, rgb,
+    Context, Div, Entity, MouseButton, SharedString, Stateful, Subscription, Window, div,
+    prelude::*, px, rgb,
 };
 use gpui_component::{
     color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState},
@@ -14,7 +15,7 @@ use gpui_component::{
 pub(super) struct LightingEditor {
     pub page: bool,
     pub settings: Lighting,
-    pub target: usize,
+    pub target: Option<usize>,
     color: Entity<ColorPickerState>,
     brightness: Entity<SliderState>,
     speed: Entity<SliderState>,
@@ -39,32 +40,35 @@ impl LightingEditor {
         });
         let subscriptions = vec![
             cx.subscribe(&color, |this, _, event: &ColorPickerEvent, cx| {
-                if let ColorPickerEvent::Change(Some(color)) = event {
-                    this.lighting.settings.light_mut(this.lighting.target).color =
-                        picker_rgb(*color);
+                if let ColorPickerEvent::Change(Some(color)) = event
+                    && let Some(target) = this.lighting.target
+                {
+                    this.lighting.settings.light_mut(target).color = picker_rgb(*color);
                     this.apply_lighting(cx);
                 }
             }),
             cx.subscribe(&brightness, |this, _, event: &SliderEvent, cx| {
+                let Some(target) = this.lighting.target else {
+                    return;
+                };
                 let SliderEvent::Change(value) = event;
-                this.lighting
-                    .settings
-                    .light_mut(this.lighting.target)
-                    .brightness = value.start().round() as u8;
-                this.apply_lighting(cx);
+                this.lighting.settings.light_mut(target).brightness = value.start().round() as u8;
+                cx.notify();
             }),
             cx.subscribe(&speed, |this, _, event: &SliderEvent, cx| {
+                let Some(target) = this.lighting.target else {
+                    return;
+                };
                 let SliderEvent::Change(value) = event;
-                this.lighting.settings.light_mut(this.lighting.target).speed =
-                    value.start().round() as u8;
-                this.apply_lighting(cx);
+                this.lighting.settings.light_mut(target).speed = value.start().round() as u8;
+                cx.notify();
             }),
         ];
         (
             Self {
                 page: false,
                 settings: Lighting::default(),
-                target: 7,
+                target: None,
                 color,
                 brightness,
                 speed,
@@ -98,7 +102,9 @@ impl CodexMicro {
     }
     pub(super) fn load_lighting(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.lighting.settings = self.profiles.active().lighting.clone();
-        self.select_light(self.lighting.target, window, cx);
+        if let Some(target) = self.lighting.target {
+            self.select_light(target, window, cx);
+        }
     }
     pub(super) fn select_light(
         &mut self,
@@ -106,7 +112,7 @@ impl CodexMicro {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.lighting.target = target;
+        self.lighting.target = Some(target);
         let light = *self.lighting.settings.light(target);
         self.lighting.color.update(cx, |state, cx| {
             state.set_value(rgb(light.color), window, cx)
@@ -135,12 +141,26 @@ impl CodexMicro {
         }
         cx.notify();
     }
+    pub(super) fn slider_change(&self, speed: bool, value: u8, cx: &mut Context<Self>) {
+        let slider = if speed {
+            &self.lighting.speed
+        } else {
+            &self.lighting.brightness
+        };
+        slider.update(cx, |_, cx| {
+            cx.emit(SliderEvent::Change(f32::from(value).into()))
+        });
+    }
+    pub(super) fn finish_lighting_drag(&mut self, cx: &mut Context<Self>) {
+        if self.lighting.settings != self.profiles.active().lighting {
+            self.apply_lighting(cx);
+        }
+    }
     pub(super) fn lighting_panel(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let p = self.palette;
-        let light = self.lighting.settings.light(self.lighting.target);
         let mut targets = div().flex().flex_wrap().gap_2();
         for (index, name) in TARGETS.into_iter().enumerate() {
-            let selected = self.lighting.target == index;
+            let selected = self.lighting.target == Some(index);
             let setting = self.lighting.settings.light(index);
             targets =
                 targets.child(
@@ -168,6 +188,39 @@ impl CodexMicro {
                         })),
                 );
         }
+        let panel =
+            div()
+                .id("lighting-panel")
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, cx| this.finish_lighting_drag(cx)),
+                )
+                .on_mouse_up_out(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, cx| this.finish_lighting_drag(cx)),
+                )
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .overflow_y_scroll()
+                .px_8()
+                .py_6()
+                .flex()
+                .flex_col()
+                .gap_5()
+                .child(div().text_size(px(22.)).child("Lighting"))
+                .child(self.label(format!(
+                    "Colors and effects for {}",
+                    self.profiles.active().name
+                )))
+                .child(self.label(
+                    "Six individual key LEDs, grouped Command keys, and an independent border.",
+                ))
+                .child(targets);
+        let Some(target) = self.lighting.target else {
+            return panel.child(self.label("Select a key or lighting zone to customize it."));
+        };
+        let light = self.lighting.settings.light(target);
         let mut effects = div().flex().flex_wrap().gap_2();
         for effect in Effect::ALL {
             effects = effects.child(
@@ -189,36 +242,15 @@ impl CodexMicro {
                     .cursor_pointer()
                     .child(effect.label())
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.lighting
-                            .settings
-                            .light_mut(this.lighting.target)
-                            .effect = effect;
+                        let Some(target) = this.lighting.target else {
+                            return;
+                        };
+                        this.lighting.settings.light_mut(target).effect = effect;
                         this.apply_lighting(cx);
                     })),
             );
         }
-        div()
-            .id("lighting-panel")
-            .flex_1()
-            .min_w_0()
-            .h_full()
-            .overflow_y_scroll()
-            .px_8()
-            .py_6()
-            .flex()
-            .flex_col()
-            .gap_5()
-            .child(div().text_size(px(22.)).child("Lighting"))
-            .child(self.label(format!(
-                "Colors and effects for {}",
-                self.profiles.active().name
-            )))
-            .child(
-                self.label(
-                    "Six individual key LEDs, grouped Command keys, and an independent border.",
-                ),
-            )
-            .child(targets)
+        panel
             .child(
                 div()
                     .flex()
@@ -245,17 +277,16 @@ impl CodexMicro {
                         |row| row.child(self.label(format!("#{:06X}", light.color))),
                     ),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .child(self.label(format!("BRIGHTNESS  {}%", light.brightness)))
-                    .child(
-                        Slider::new(&self.lighting.brightness)
-                            .disabled(light.effect == Effect::Off),
-                    ),
-            )
+            .when(light.effect != Effect::Off, |panel| {
+                panel.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(self.label(format!("BRIGHTNESS  {}%", light.brightness)))
+                        .child(Slider::new(&self.lighting.brightness)),
+                )
+            })
             .when(light.effect.animated(), |panel| {
                 panel.child(
                     div()

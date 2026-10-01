@@ -74,9 +74,11 @@ The profiles and active selection persist when you close the app.
 
 Open **Lighting** and select **Key 01** through **Key 06**, **Command keys**,
 or **Border**. The color picker accepts a hex color such as `#FF6600`.
-Choose an effect and adjust brightness or speed. Every change saves and applies
-automatically, so the Micro responds as you edit. Speed appears only for animated
-effects. The device drawing shows each target's base color.
+Choose an effect and adjust brightness or speed. Colors and effects apply
+immediately. Sliders update the preview while dragging and save when you release
+the handle. Brightness is hidden for Off, and speed appears only for animated
+effects. Controls appear after selecting a key or lighting zone. The device
+drawing shows each target's base color.
 
 Each profile has lighting enabled by default and keeps its own colors and
 effects. Existing profiles without lighting settings use solid `#81A1C1` at
