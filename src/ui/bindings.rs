@@ -82,7 +82,6 @@ impl CodexMicro {
         self.invalidate_ai();
         self.shortcut_capture.reset();
         self.text_submit = false;
-        self.text_bulk = false;
         let action = self
             .profiles
             .active()
@@ -102,10 +101,9 @@ impl CodexMicro {
                 self.tab = ActionTab::Shortcut;
                 chord
             }
-            Some(Action::Text { text, submit, bulk }) => {
+            Some(Action::Text { text, submit }) => {
                 self.tab = ActionTab::Text;
                 self.text_submit = submit;
-                self.text_bulk = bulk;
                 text
             }
             Some(Action::Command { command }) => {
@@ -142,7 +140,6 @@ impl CodexMicro {
         self.invalidate_ai();
         self.tab = tab;
         self.text_submit = false;
-        self.text_bulk = false;
         self.action_scroll.set_offset(point(px(0.), px(0.)));
         self.shortcut_capture.reset();
         self.action_input().update(cx, |input, cx| {
@@ -230,7 +227,6 @@ impl CodexMicro {
             ActionTab::App => Action::Launch { command: text },
             ActionTab::Shortcut => Action::Shortcut { chord: text },
             ActionTab::Text => Action::Text {
-                bulk: self.text_bulk,
                 text,
                 submit: self.text_submit,
             },

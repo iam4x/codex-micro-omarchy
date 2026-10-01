@@ -90,11 +90,6 @@ the multi-profile format on the next save.
 The other action kinds are `preset`, `launch`, `shortcut`, `text`, and `command`.
 Text snippets send embedded line breaks as Shift+Enter. Their `submit` flag
 adds one plain Enter at the end and defaults to false.
-Their `bulk` flag defaults to false. When true, the snippet is pasted through
-the primary selection with Shift+Insert, replacing that selection while leaving
-the normal clipboard untouched. The target application must map Shift+Insert
-to primary selection paste. On Hyprland, keep the pointer over the target app.
-Both modes wait 500 ms before optional submission.
 
 Use `codex-micro --check-config` to validate an externally edited profile.
 Use the repository README and Rust action model for the current preset list

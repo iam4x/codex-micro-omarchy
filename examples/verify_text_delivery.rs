@@ -1,14 +1,5 @@
-//! Exercises text delivery against a native chat input: Enter sends,
+//! Exercises the installed service against a native chat input: Enter sends,
 //! Shift+Enter adds a line break. No messages leave this temporary window.
-#[allow(dead_code)]
-#[path = "../src/lighting.rs"]
-mod lighting;
-#[allow(dead_code)]
-#[path = "../src/model.rs"]
-mod model;
-#[allow(dead_code)]
-#[path = "../src/protocol.rs"]
-mod protocol;
 #[path = "../src/wire.rs"]
 mod wire;
 
@@ -29,7 +20,7 @@ use std::{
     time::Duration,
 };
 
-actions!(chat_probe, [Submit, PastePrimary]);
+actions!(chat_probe, [Submit]);
 
 struct ChatProbe {
     input: Entity<InputState>,
@@ -53,17 +44,6 @@ impl ChatProbe {
                 let output = smol::process::Command::new("hyprctl")
                     .args(["dispatch", &format!("hl.dsp.focus({{window={selector:?}}})")]).output().await?;
                 ensure!(output.status.success(), "Cannot focus test window");
-                let clipboard_before = smol::process::Command::new("wl-paste")
-                    .arg("--no-newline").output().await?;
-                let client = clients.iter().find(|client| client["pid"] == std::process::id()).unwrap();
-                let x = client["at"][0].as_i64().context("Missing window x")?
-                    + client["size"][0].as_i64().context("Missing window width")? / 2;
-                let y = client["at"][1].as_i64().context("Missing window y")? + 100;
-                let output = smol::process::Command::new("hyprctl")
-                    .args(["dispatch", &format!("hl.dsp.cursor.move({{x={x},y={y},relative=false}})")])
-                    .output().await?;
-                ensure!(output.status.success(), "Cannot give the test window pointer focus");
-                smol::Timer::after(Duration::from_millis(150)).await;
                 for snippet in [
                     "Hello\n",
                     "--literal\n\nCafé ☕\n-M shift\n-k Return\n",
@@ -72,7 +52,7 @@ impl ChatProbe {
                     "CRLF\r\nNext\rLast\r",
                 ] {
                     let normalized = snippet.replace("\r\n", "\n").replace('\r', "\n");
-                    for (bulk, submit) in [(false, false), (false, true), (true, false), (true, true)] {
+                    for submit in [false, true] {
                         view.update_in(cx, |this, window, cx| {
                             this.sent.clear();
                             this.input.update(cx, |input, cx| {
@@ -85,7 +65,7 @@ impl ChatProbe {
                         let active: Value = serde_json::from_slice(&active.stdout)?;
                         ensure!(active["pid"] == std::process::id(), "Test window lost focus; no text sent");
                         let snippet = snippet.to_owned();
-                        smol::unblock(move || send_text(&snippet, submit, bulk)).await?;
+                        smol::unblock(move || send_text(&snippet, submit)).await?;
                         smol::Timer::after(Duration::from_millis(600)).await;
                         let (input, sent) = view.update_in(cx, |this, _, cx| {
                             (this.input.read(cx).value().to_string(), this.sent.clone())
@@ -97,16 +77,10 @@ impl ChatProbe {
                             ensure!(input == normalized && sent.is_empty(),
                                 "Submit disabled must preserve the whole draft without sending: input={input:?}, sent={sent:?}");
                         }
-                        println!("PASS: bulk={bulk}, submit={submit}, {} line breaks, {} submissions, exact Unicode text",
+                        println!("PASS: submit={submit}, {} line breaks, {} submissions, exact Unicode text",
                             normalized.matches('\n').count(), sent.len());
                     }
                 }
-                let clipboard_after = smol::process::Command::new("wl-paste")
-                    .arg("--no-newline").output().await?;
-                ensure!(clipboard_before.status == clipboard_after.status
-                    && clipboard_before.stdout == clipboard_after.stdout,
-                    "Text delivery changed the normal clipboard");
-                println!("PASS: normal clipboard unchanged");
                 Ok(())
             }.await;
             *outcome.lock().unwrap() = result;
@@ -116,14 +90,6 @@ impl ChatProbe {
             input,
             sent: Vec::new(),
             _subscription: subscription,
-        }
-    }
-
-    fn paste_primary(&mut self, _: &PastePrimary, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(text) = cx.read_from_primary().and_then(|item| item.text()) {
-            self.input
-                .update(cx, |input, cx| input.insert(text, window, cx));
-            cx.notify();
         }
     }
 
@@ -144,34 +110,20 @@ impl Render for ChatProbe {
             .flex_col()
             .gap_4()
             .on_action(cx.listener(Self::submit))
-            .on_action(cx.listener(Self::paste_primary))
             .child("Local chat regression check. Enter submits. Shift+Enter adds a line.")
             .child(Input::new(&self.input).h(px(180.)))
             .child(format!("Submissions: {}", self.sent.len()))
     }
 }
 
-fn send_text(text: &str, submit: bool, bulk: bool) -> Result<()> {
-    if std::env::var_os("CODEX_MICRO_TEXT_LOCAL").is_some() {
-        let argv = model::Action::Text {
-            text: text.into(),
-            submit,
-            bulk,
-        }
-        .argv()?;
-        let status = std::process::Command::new(&argv[0])
-            .args(&argv[1..])
-            .status()?;
-        ensure!(status.success(), "Text delivery failed: {status}");
-        return Ok(());
-    }
+fn send_text(text: &str, submit: bool) -> Result<()> {
     let runtime = std::env::var_os("XDG_RUNTIME_DIR").context("XDG_RUNTIME_DIR is missing")?;
     let mut stream = UnixStream::connect(std::path::Path::new(&runtime).join("work-louder.sock"))?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;
     stream.set_write_timeout(Some(Duration::from_secs(3)))?;
     wire::write(
         &mut stream,
-        &json!({"method": "test", "action": {"kind": "text", "text": text, "submit": submit, "bulk": bulk}}),
+        &json!({"method": "test", "action": {"kind": "text", "text": text, "submit": submit}}),
     )?;
     let reply: Value = wire::read(&mut BufReader::new(stream))?;
     ensure!(reply["ok"] == true, "Service refused text test: {reply}");
@@ -188,7 +140,6 @@ fn main() -> Result<()> {
         gpui_component::init(cx);
         cx.bind_keys([
             KeyBinding::new("enter", Submit, Some("Input")),
-            KeyBinding::new("shift-insert", PastePrimary, Some("Input")),
             KeyBinding::new("shift-enter", Enter { secondary: false }, Some("Input")),
         ]);
         cx.on_window_closed(|cx| cx.quit()).detach();

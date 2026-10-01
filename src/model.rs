@@ -176,8 +176,6 @@ pub enum Action {
     Text {
         text: String,
         #[serde(default)]
-        bulk: bool,
-        #[serde(default)]
         submit: bool,
     },
     Command {
@@ -304,7 +302,6 @@ impl Action {
             Self::Preset { preset } => preset.name().into(),
             Self::Launch { command } => command.clone(),
             Self::Shortcut { chord } => chord.clone(),
-            Self::Text { bulk: true, .. } => "Paste text".into(),
             Self::Text { .. } => "Type text".into(),
             Self::Command { .. } => "Run command".into(),
             Self::Ai { summary, .. } => summary.clone(),
@@ -338,24 +335,10 @@ impl Action {
                     ),
                 ]
             }
-            Self::Text { text, submit, bulk } => {
+            Self::Text { text, submit } => {
                 ensure!(!text.is_empty(), "Enter some text");
-                ensure!(
-                    !text.contains('\0'),
-                    "Actions cannot contain null characters"
-                );
-                let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-                if *bulk {
-                    return Ok(vec![
-                        "sh".into(),
-                        "-c".into(),
-                        include_str!("text-paste.sh").into(),
-                        "text-paste".into(),
-                        normalized,
-                        submit.to_string(),
-                    ]);
-                }
                 let mut argv = vec!["wtype".into()];
+                let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
                 for (index, line) in normalized.split('\n').enumerate() {
                     if index != 0 {
                         argv.extend(
@@ -374,7 +357,7 @@ impl Action {
                     }
                 }
                 if *submit {
-                    argv.extend(["-s", "500", "-k", "Return"].map(String::from));
+                    argv.extend(["-s", "100", "-k", "Return"].map(String::from));
                 }
                 argv
             }
@@ -681,7 +664,6 @@ mod tests {
     #[test]
     fn snippet_line_breaks_do_not_send_unmodified_enter() {
         let action = Action::Text {
-            bulk: false,
             text: "Hello\n\nCafé\n".into(),
             submit: false,
         };
@@ -701,14 +683,12 @@ mod tests {
         assert_eq!(
             legacy,
             Action::Text {
-                bulk: false,
                 text: "hello".into(),
                 submit: false
             }
         );
         for submit in [false, true] {
             let action = Action::Text {
-                bulk: false,
                 text: original.into(),
                 submit,
             };
@@ -742,82 +722,15 @@ mod tests {
                 "shift",
             ];
             if submit {
-                expected.extend(["-s", "500", "-k", "Return"]);
+                expected.extend(["-s", "100", "-k", "Return"]);
             }
             assert_eq!(action.argv().unwrap(), expected);
-        }
-    }
-    #[test]
-    fn bulk_text_preserves_literal_content_and_saved_mode() {
-        for submit in [false, true] {
-            let action = Action::Text {
-                text: "--literal '$HOME' `echo danger`\r\nCafé ☕\r\n".into(),
-                bulk: true,
-                submit,
-            };
-            let decoded: Action = toml::from_str(&toml::to_string(&action).unwrap()).unwrap();
-            assert_eq!(decoded, action);
-            let argv = action.argv().unwrap();
-            assert_eq!(argv[0..2], ["sh", "-c"]);
-            assert_eq!(argv[2], include_str!("text-paste.sh"));
-            assert_eq!(argv[4], "--literal '$HOME' `echo danger`\nCafé ☕\n");
-            assert_eq!(argv[5], submit.to_string());
-        }
-        assert!(
-            Action::Text {
-                text: "bad\0text".into(),
-                bulk: true,
-                submit: true
-            }
-            .argv()
-            .is_err()
-        );
-    }
-    #[test]
-    fn bulk_text_does_not_submit_when_copy_or_paste_fails() {
-        use std::os::unix::fs::PermissionsExt;
-        let directory = tempfile::tempdir().unwrap();
-        let root = directory.path();
-        for (name, script) in [
-            ("wl-copy", "#!/bin/sh\nexit \"$COPY_EXIT\"\n"),
-            (
-                "wtype",
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$TEST_ROOT/keys\"\nexit \"$PASTE_EXIT\"\n",
-            ),
-        ] {
-            fs::write(root.join(name), script).unwrap();
-            fs::set_permissions(root.join(name), fs::Permissions::from_mode(0o700)).unwrap();
-        }
-        let argv = Action::Text {
-            text: "Hello".into(),
-            bulk: true,
-            submit: true,
-        }
-        .argv()
-        .unwrap();
-        for (copy_exit, paste_exit) in [(1, 0), (0, 1)] {
-            let status = std::process::Command::new(&argv[0])
-                .args(&argv[1..])
-                .env(
-                    "PATH",
-                    format!("{}:{}", root.display(), std::env::var("PATH").unwrap()),
-                )
-                .env("XDG_RUNTIME_DIR", root)
-                .env("TEST_ROOT", root)
-                .env("COPY_EXIT", copy_exit.to_string())
-                .env("PASTE_EXIT", paste_exit.to_string())
-                .status()
-                .unwrap();
-            assert!(!status.success());
-            let keys = fs::read_to_string(root.join("keys")).unwrap_or_default();
-            assert!(!keys.contains("Return"), "Submit ran after failed delivery");
         }
     }
     #[test]
     fn executable_arguments_reject_null_characters() {
         for action in [
             Action::Text {
-                bulk: false,
                 text: "text\0".into(),
                 submit: false,
             },
@@ -832,7 +745,6 @@ mod tests {
         }
         assert_eq!(
             Action::Text {
-                bulk: false,
                 text: "Line 1\n\nCafé".into(),
                 submit: false,
             }
@@ -849,7 +761,6 @@ mod tests {
     fn text_delivery_handles_crlf_and_literal_wtype_options() {
         assert_eq!(
             Action::Text {
-                bulk: false,
                 text: "-M shift\r\n--\r-k Return".into(),
                 submit: true
             }
@@ -858,17 +769,16 @@ mod tests {
             [
                 "wtype", "-k", "minus", "M shift", "-M", "shift", "-k", "Return", "-m", "shift",
                 "-k", "minus", "-k", "minus", "-M", "shift", "-k", "Return", "-m", "shift", "-k",
-                "minus", "k Return", "-s", "500", "-k", "Return",
+                "minus", "k Return", "-s", "100", "-k", "Return",
             ]
         );
         for submit in [false, true] {
             let mut expected = vec!["wtype", "Café ☕"];
             if submit {
-                expected.extend(["-s", "500", "-k", "Return"]);
+                expected.extend(["-s", "100", "-k", "Return"]);
             }
             assert_eq!(
                 Action::Text {
-                    bulk: false,
                     text: "Café ☕".into(),
                     submit
                 }
@@ -923,7 +833,6 @@ mod tests {
             Control::Mic,
             Phase::Release,
             Some(Action::Text {
-                bulk: false,
                 text: "Café\n\n".into(),
                 submit: true,
             }),
@@ -1058,7 +967,6 @@ mod tests {
             Control::AG00,
             Phase::Step,
             Some(Action::Text {
-                bulk: false,
                 text: "wrong phase".into(),
                 submit: false,
             }),
@@ -1082,7 +990,6 @@ mod tests {
                         Control::Mic,
                         Phase::Release,
                         Some(Action::Text {
-                            bulk: false,
                             text: "Line 1\n\nCafé".repeat(100),
                             submit: false,
                         }),

@@ -175,7 +175,6 @@ mod tests {
             crate::model::Control::Mic,
             crate::model::Phase::Press,
             Some(Action::Text {
-                bulk: false,
                 text: "Hello\nworld".into(),
                 submit: false,
             }),
