@@ -14,12 +14,14 @@ fn main() -> Result<()> {
         [] => "all",
         [flag] if flag == "--profiles" => "profiles",
         [flag] if flag == "--ai-only" => "ai",
-        _ => anyhow::bail!("Usage: verify-native [--profiles | --ai-only]"),
+        [flag] if flag == "--joystick" => "joystick",
+        _ => anyhow::bail!("Usage: verify-native [--profiles | --ai-only | --joystick]"),
     };
     let mut app = NativeApp::start()?;
     let result = match mode {
         "profiles" => check_profiles(&mut app),
         "ai" => ai::check(&app),
+        "joystick" => check_joystick(&mut app),
         _ => verify(&mut app),
     };
     if result.is_err() {
@@ -27,7 +29,10 @@ fn main() -> Result<()> {
     }
     result?;
     drop(app);
-    if mode != "profiles" && std::env::var_os("CODEX_MICRO_VERIFY_REAL_AI").is_none() {
+    if mode != "profiles"
+        && mode != "joystick"
+        && std::env::var_os("CODEX_MICRO_VERIFY_REAL_AI").is_none()
+    {
         ai::check_window_close()?;
     }
     Ok(())
@@ -48,6 +53,7 @@ fn verify(app: &mut NativeApp) -> Result<()> {
         "Control socket stopped responding"
     );
     println!("PASS: invalid UI commands return errors without disabling the control socket");
+    check_joystick(app).context("Joystick bindings")?;
     check_profiles(app).context("Multiple profiles")?;
     check_search(app).context("System action search")?;
     check_forms(app).context("Action forms")?;
@@ -74,6 +80,52 @@ fn verify(app: &mut NativeApp) -> Result<()> {
     println!("PASS: all five media actions can be assigned");
     app.screenshot("native-media")?;
     println!("PASS: Native GPUI callback and keyboard smoke check");
+    Ok(())
+}
+
+fn check_joystick(app: &mut NativeApp) -> Result<()> {
+    for control in ["JOY_UP", "JOY_RIGHT", "JOY_DOWN", "JOY_LEFT"] {
+        app.ui(json!({"action":"select", "control":control}))?;
+        ensure!(
+            app.inspect()?.phase == "press",
+            "Joystick must default to press"
+        );
+        ensure!(
+            !app.request(json!({"op":"ui", "action":"phase", "phase":"step"}))?
+                .ok,
+            "Joystick accepted a rotation step"
+        );
+        app.ui(json!({"action":"tab", "tab":"system"}))?;
+        for (phase, preset) in [("press", "terminal"), ("release", "browser")] {
+            app.ui(json!({"action":"phase", "phase":phase}))?;
+            app.ui(json!({"action":"preset", "preset":preset}))?;
+            app.ui(json!({"action":"save"}))?;
+            ensure!(
+                app.binding(control, phase)? == Some(json!({"kind":"preset", "preset":preset})),
+                "Joystick binding was not saved: {control} {phase}"
+            );
+        }
+    }
+    app.screenshot("native-joystick")?;
+    app.restart()?;
+    for control in ["JOY_UP", "JOY_RIGHT", "JOY_DOWN", "JOY_LEFT"] {
+        app.ui(json!({"action":"select", "control":control}))?;
+        for (phase, preset) in [("press", "terminal"), ("release", "browser")] {
+            app.ui(json!({"action":"phase", "phase":phase}))?;
+            ensure!(
+                app.binding(control, phase)? == Some(json!({"kind":"preset", "preset":preset})),
+                "Joystick binding did not reload"
+            );
+            app.ui(json!({"action":"remove"}))?;
+            app.ui(json!({"action":"confirm_remove"}))?;
+            ensure!(
+                app.binding(control, phase)?.is_none(),
+                "Joystick binding was not removed"
+            );
+        }
+    }
+    app.ui(json!({"action":"select", "control":"AG00"}))?;
+    println!("PASS: all joystick directions support press/release, persistence, and removal");
     Ok(())
 }
 

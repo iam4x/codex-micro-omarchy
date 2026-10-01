@@ -220,25 +220,27 @@ fn device_loop(hub: SharedHub) {
                                     publish(&hub, Event::Status(status));
                                 }
                             }
-                        } else if let Some(input) = inputs.notification(&message) {
-                            publish(&hub, Event::Input(input.clone()));
-                            let action = hub
-                                .lock()
-                                .unwrap()
-                                .profile
-                                .action(input.control, input.phase)
-                                .cloned();
-                            if let Some(action) = action
-                                && let Err(error) = execute(&action, hub.clone())
-                            {
-                                publish(
-                                    &hub,
-                                    Event::Action {
-                                        title: action.title(),
-                                        message: error.to_string(),
-                                        success: false,
-                                    },
-                                );
+                        } else {
+                            for input in inputs.notification(&message) {
+                                publish(&hub, Event::Input(input.clone()));
+                                let action = hub
+                                    .lock()
+                                    .unwrap()
+                                    .profile
+                                    .action(input.control, input.phase)
+                                    .cloned();
+                                if let Some(action) = action
+                                    && let Err(error) = execute(&action, hub.clone())
+                                {
+                                    publish(
+                                        &hub,
+                                        Event::Action {
+                                            title: action.title(),
+                                            message: error.to_string(),
+                                            success: false,
+                                        },
+                                    );
+                                }
                             }
                         }
                     }
