@@ -15,13 +15,17 @@ fn main() -> Result<()> {
         [flag] if flag == "--profiles" => "profiles",
         [flag] if flag == "--ai-only" => "ai",
         [flag] if flag == "--joystick" => "joystick",
-        _ => anyhow::bail!("Usage: verify-native [--profiles | --ai-only | --joystick]"),
+        [flag] if flag == "--shortcuts" => "shortcuts",
+        _ => anyhow::bail!(
+            "Usage: verify-native [--profiles | --ai-only | --joystick | --shortcuts]"
+        ),
     };
     let mut app = NativeApp::start()?;
     let result = match mode {
         "profiles" => check_profiles(&mut app),
         "ai" => ai::check(&app),
         "joystick" => check_joystick(&mut app),
+        "shortcuts" => check_shortcuts(&app),
         _ => verify(&mut app),
     };
     if result.is_err() {
@@ -31,6 +35,7 @@ fn main() -> Result<()> {
     drop(app);
     if mode != "profiles"
         && mode != "joystick"
+        && mode != "shortcuts"
         && std::env::var_os("CODEX_MICRO_VERIFY_REAL_AI").is_none()
     {
         ai::check_window_close()?;
@@ -579,6 +584,52 @@ fn check_shortcuts(app: &NativeApp) -> Result<()> {
     ensure!(
         fs::read_to_string(&app.config)? == before,
         "Recording changed a saved binding"
+    );
+    app.key("ctrl-c")?;
+    app.ui(json!({"action": "shortcut_manual", "enabled": true}))?;
+    ensure!(
+        app.inspect()?.shortcut_manual
+            && !app.inspect()?.shortcut_held
+            && app.inspect()?.input == "Tab",
+        "Switching to typing lost the draft or left a pending capture"
+    );
+    app.key("ctrl-a")?;
+    app.type_text("Super+")?;
+    app.ui(json!({"action": "save"}))?;
+    ensure!(
+        app.inspect()?.message_error && fs::read_to_string(&app.config)? == before,
+        "Invalid manual shortcut was saved"
+    );
+    app.type_text("Left")?;
+    let state = app.inspect()?;
+    ensure!(
+        state.input == "Super+Left" && !state.shortcut_held,
+        "Typed shortcut was intercepted by recorder: {state:?}"
+    );
+    ensure!(
+        fs::read_to_string(&app.config)? == before,
+        "Typing changed a saved binding"
+    );
+    app.ui(json!({"action": "save"}))?;
+    ensure!(
+        app.binding("AG00", "press")? == Some(json!({"kind": "shortcut", "chord": "Super+Left"})),
+        "System shortcut did not save"
+    );
+    app.screenshot("native-shortcut-manual")?;
+    reload(app)?;
+    ensure!(
+        app.inspect()?.input == "Super+Left",
+        "System shortcut did not reload"
+    );
+    app.ui(json!({"action": "shortcut_manual", "enabled": false}))?;
+    app.key("f5")?;
+    app.ui(json!({"action": "shortcut_key_up", "key": "f5"}))?;
+    ensure!(
+        !app.inspect()?.shortcut_manual && app.inspect()?.input == "F5",
+        "Recording did not resume after manual entry"
+    );
+    println!(
+        "PASS: manual entry saves and reloads Super+Left, cancels pending capture, and returns to recording"
     );
     println!(
         "PASS: shortcut captures only after all releases, suppresses editor shortcuts, handles Escape and function keys, and keeps changes as a draft"

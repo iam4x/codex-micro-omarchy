@@ -44,6 +44,7 @@ pub enum UiAction {
     FocusSearch,
     FocusInput,
     TextSubmit { enabled: bool },
+    ShortcutManual { enabled: bool },
     ClearShortcut,
     ShortcutKeyUp { key: String },
     ShortcutModifiers { modifiers: Modifiers },
@@ -80,6 +81,7 @@ struct Snapshot {
     scroll_y: f32,
     input: String,
     text_submit: bool,
+    shortcut_manual: bool,
     shortcut_preview: Option<String>,
     shortcut_held: bool,
     profiles: Vec<String>,
@@ -184,6 +186,7 @@ pub fn dispatch(
             .action_input()
             .update(cx, |input, cx| input.focus(window, cx)),
         UiAction::TextSubmit { enabled } => view.set_text_submit(enabled, cx),
+        UiAction::ShortcutManual { enabled } => view.set_shortcut_manual(enabled, window, cx),
         UiAction::ClearShortcut => view.clear_shortcut(window, cx),
         UiAction::ShortcutKeyUp { key } => {
             let keystroke = Keystroke::parse(&key)?;
@@ -263,6 +266,7 @@ pub fn poll(
                     scroll_y: f32::from(view.action_scroll.offset().y),
                     input: view.action_input().read(cx).value().to_string(),
                     text_submit: view.text_submit,
+                    shortcut_manual: view.shortcut_manual,
                     shortcut_preview: view.shortcut_capture.preview(),
                     shortcut_held: view.shortcut_capture.is_held(),
                     profiles: view

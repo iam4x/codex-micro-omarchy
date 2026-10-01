@@ -125,11 +125,13 @@ impl CodexMicro {
         self.shortcut_capture.reset();
         self.action_input().update(cx, |input, cx| {
             input.set_value("", window, cx);
-            if !matches!(tab, ActionTab::System | ActionTab::Shortcut) {
+            if !matches!(tab, ActionTab::System | ActionTab::Shortcut)
+                || (tab == ActionTab::Shortcut && self.shortcut_manual)
+            {
                 input.focus(window, cx);
             }
         });
-        if tab == ActionTab::Shortcut {
+        if tab == ActionTab::Shortcut && !self.shortcut_manual {
             window.focus(&self.shortcut_focus);
         }
         cx.notify();
