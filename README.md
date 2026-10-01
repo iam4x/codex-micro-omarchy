@@ -208,8 +208,12 @@ Run `codex-micro --print-ai-skill` to print the embedded guide.
 
 ### Remove, reset, and undo
 
-Remove binding clears only the selected control and event. Reset all removes
-every binding, including release events and dial rotations.
+Remove binding asks for confirmation before clearing the selected control and
+event. Escape or Cancel keeps the binding.
+
+![Confirmation dialog for removing the selected binding](docs/screenshots/remove-dialog.png)
+
+Reset all removes every binding, including release events and dial rotations.
 
 Undo reset restores the previous bindings until you make another binding
 change or close the editor. New installations start with no bindings.
