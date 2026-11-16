@@ -179,7 +179,52 @@ fn send(device: &HidDevice, value: &Value) -> Result<()> {
     Ok(())
 }
 
+const HID_DEVICES: &str = "/sys/bus/hid/devices";
+
+/// Kernel HID entries for the Micro, such as `0005:303A:8360.0013`. Bluetooth
+/// reconnects create a new entry, so a name missing from an earlier snapshot
+/// means the device just woke up.
+fn micro_hid_entries(directory: &std::path::Path) -> Vec<std::ffi::OsString> {
+    let suffix = format!(":{:04X}:{:04X}.", protocol::VID, protocol::PID);
+    fs::read_dir(directory)
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|entry| entry.file_name())
+                .filter(|name| name.to_string_lossy().contains(&suffix))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Sleeps until the next connection attempt. The Micro drops its Bluetooth
+/// link when idle and reconnects on the next key press. The kernel only
+/// delivers HID reports to readers that already have the device open, so
+/// reopen as soon as a new entry appears instead of waiting out the full
+/// retry delay.
+fn wait_for_device(seen: &[std::ffi::OsString], fast_until: &mut Option<Instant>) {
+    const POLL: Duration = Duration::from_millis(50);
+    let retry_at = Instant::now() + Duration::from_secs(2);
+    loop {
+        thread::sleep(POLL);
+        let now = Instant::now();
+        // udev may still be applying permissions to a fresh node, so keep
+        // retrying quickly for a moment after it appears.
+        if now >= retry_at || fast_until.is_some_and(|until| now < until) {
+            return;
+        }
+        if micro_hid_entries(std::path::Path::new(HID_DEVICES))
+            .iter()
+            .any(|entry| !seen.contains(entry))
+        {
+            *fast_until = Some(now + Duration::from_secs(1));
+            return;
+        }
+    }
+}
+
 fn device_loop(hub: SharedHub) {
+    let mut fast_until = None;
     loop {
         let connection = (|| -> Result<()> {
             let (device, transport) = open_device()?;
@@ -305,7 +350,8 @@ fn device_loop(hub: SharedHub) {
                 publish(&hub, Event::Status(status));
             }
         }
-        thread::sleep(Duration::from_secs(2));
+        let seen = micro_hid_entries(std::path::Path::new(HID_DEVICES));
+        wait_for_device(&seen, &mut fast_until);
     }
 }
 
@@ -382,6 +428,23 @@ mod tests {
             }
             _ => panic!("Wrong execution event"),
         }
+    }
+
+    #[test]
+    fn micro_hid_entries_match_only_the_micro() {
+        let directory = tempfile::tempdir().unwrap();
+        for name in [
+            "0005:303A:8360.0013",
+            "0003:303A:8360.0002",
+            "0003:046D:C547.000B",
+            "0005:303A:8361.0001",
+        ] {
+            fs::create_dir(directory.path().join(name)).unwrap();
+        }
+        let mut entries = micro_hid_entries(directory.path());
+        entries.sort();
+        assert_eq!(entries, ["0003:303A:8360.0002", "0005:303A:8360.0013"]);
+        assert!(micro_hid_entries(&directory.path().join("missing")).is_empty());
     }
 
     #[test]
